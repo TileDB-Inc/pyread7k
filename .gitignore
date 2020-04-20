@@ -1,0 +1,23 @@
+# Python cache files:
+__pycache__
+
+# general data caches:
+cache
+
+# spyder project:
+.spyproject
+
+# TensorFlow log-files:
+events.out.tfevents.*
+
+# MATLAB:
+*.asv
+
+# graphical artifacts:
+*.png
+*.avi
+*.mp4
+
+# visual studio:
+.vs
+.suo
