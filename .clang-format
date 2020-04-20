@@ -1,0 +1,5 @@
+# Common settings
+BasedOnStyle: LLVM
+TabWidth:     2
+IndentWidth:  2
+UseTab:       Never
