@@ -262,16 +262,45 @@ class _DataRecord7038(DataRecord):
         rth = self._block_rth.read(source)
 
         n_actual_channels = rth['n_actual_channels']
-        block_ch_array = DataBlock((
-            elemD_('channel_array', elemT.u16, n_actual_channels),))
-        channel_array = block_ch_array.read_dense(source)
 
-        n_samples = rth['n_samples']
+        block_channel_array = DataBlock((
+            elemD_('channel_array',
+                   elemT.u16,
+                   n_actual_channels),))
+
+        rth.update(block_channel_array.read_dense(source))
+
         n_actual_samples = rth['stop_sample'] - rth['start_sample'] + 1
+        sample_type = rth['sample_type']
 
-        # count = n_samples * n_beams
-        # rd = self._block_rd_amp_phs.read_dense(source, count)
-        # rd = rd.reshape((n_samples, n_beams))
+        def f_block_actual_data(elemType):
+            return DataBlock((elemD_('actual_data', elemType,
+                 n_actual_channels * n_actual_samples * 2),))
+
+        if sample_type == 8:
+            rd = f_block_actual_data(elemT.i8).read_dense(source)
+            actual_data = rd['actual_data']
+            actual_data[actual_data < 0] += 65536
+            actual_data *= 16
+            actual_data[actual_data > 2047] -= 4096
+        else:
+            rd = f_block_actual_data(elemT.i16).read_dense(source)
+            actual_data = rd['actual_data']
+
+        rd['value'] = np.zeros(
+            (n_actual_channels, rth['n_samples']),
+            dtype=[(elem, actual_data.dtype.name) for elem in ('i', 'q')])
+
+        data_i = actual_data[0::2].reshape((n_actual_samples, -1), order='F')
+        rd['value']['i'][
+            rth['channel_array'],
+            slice(rth['start_sample'], rth['stop_sample'] + 1)] = data_i
+
+        data_q = actual_data[1::2].reshape((n_actual_samples, -1), order='F')
+        rd['value']['q'][
+            rth['channel_array'],
+            slice(rth['start_sample'], rth['stop_sample'] + 1)] =  data_q
+
         return rth, rd, None
 
 
