@@ -237,6 +237,44 @@ class _DataRecord7018(DataRecord):
         return rth, rd, None
 
 
+class _DataRecord7038(DataRecord):
+
+    _block_rth = DataBlock((
+        elemD_('serial_number', elemT.u64),
+        elemD_('ping_number', elemT.u32),
+        elemD_('is_multi_ping', elemT.u16),
+        elemD_('channel_count', elemT.u16),
+        elemD_('n_samples', elemT.u32),
+        elemD_('n_actual_channels', elemT.u16),
+        elemD_('start_sample', elemT.u32),
+        elemD_('stop_sample', elemT.u32),
+        elemD_('sample_type', elemT.u16),
+        elemD_(None, elemT.u32, 7)))
+
+    _block_rd_data_u16 = DataBlock((
+        elemD_('amp', elemT.u16),
+        elemD_('phs', elemT.i16)))
+
+    def _read(
+            self, source: io.RawIOBase,
+            drf: DRFBlock.DRF,
+            start_offset: int):
+        rth = self._block_rth.read(source)
+
+        n_actual_channels = rth['n_actual_channels']
+        block_ch_array = DataBlock((
+            elemD_('channel_array', elemT.u16, n_actual_channels),))
+        channel_array = block_ch_array.read_dense(source)
+
+        n_samples = rth['n_samples']
+        n_actual_samples = rth['stop_sample'] - rth['start_sample'] + 1
+
+        # count = n_samples * n_beams
+        # rd = self._block_rd_amp_phs.read_dense(source, count)
+        # rd = rd.reshape((n_samples, n_beams))
+        return rth, rd, None
+
+
 class _DataRecord1003(DataRecord):
 
     """Position - GPS Coordinates"""
