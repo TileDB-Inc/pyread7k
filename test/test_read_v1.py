@@ -1,13 +1,13 @@
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pyread7k as r7k
 
 import os
-import s7k_utils
 
 data_root = os.environ['PATH_7K_DATA_ROOT']
-data_path = s7k_utils.files.path(95)
+data_path = r'reson_20191126\2019-07-12 F50 Mines Elefantgrunden\SoloMine\45 degree tilt\400 kHz\20190712_085609.s7k'
 filename = data_root + '\\' + data_path
 
 with open(filename, 'rb', buffering=0) as fid:
