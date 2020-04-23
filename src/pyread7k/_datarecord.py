@@ -264,11 +264,10 @@ class _DataRecord7038(DataRecord):
         n_actual_channels = rth['n_actual_channels']
 
         block_channel_array = DataBlock((
-            elemD_('channel_array',
-                   elemT.u16,
-                   n_actual_channels),))
+            elemD_('channel_array', elemT.u16, n_actual_channels),))
 
-        rth.update(block_channel_array.read_dense(source))
+        channel_array = block_channel_array.read_dense(source)
+        channel_array = np.squeeze(channel_array['channel_array'])
 
         n_actual_samples = rth['stop_sample'] - rth['start_sample'] + 1
         sample_type = rth['sample_type']
@@ -278,28 +277,27 @@ class _DataRecord7038(DataRecord):
                  n_actual_channels * n_actual_samples * 2),))
 
         if sample_type == 8:
-            rd = f_block_actual_data(elemT.i8).read_dense(source)
-            actual_data = rd['actual_data']
+            actual_data = f_block_actual_data(elemT.i8).read_dense(source)
+            actual_data = np.squeeze(actual_data['actual_data'])
             actual_data[actual_data < 0] += 65536
             actual_data *= 16
             actual_data[actual_data > 2047] -= 4096
         else:
-            rd = f_block_actual_data(elemT.i16).read_dense(source)
-            actual_data = rd['actual_data']
+            actual_data = f_block_actual_data(elemT.i16).read_dense(source)
+            actual_data = np.squeeze(actual_data['actual_data'])
 
-        rd['value'] = np.zeros(
-            (n_actual_channels, rth['n_samples']),
+        rd_value = np.zeros(
+            (rth['n_samples'], n_actual_channels),
             dtype=[(elem, actual_data.dtype.name) for elem in ('i', 'q')])
 
-        data_i = actual_data[0::2].reshape((n_actual_samples, -1), order='F')
-        rd['value']['i'][
-            rth['channel_array'],
-            slice(rth['start_sample'], rth['stop_sample'] + 1)] = data_i
+        rd_view = rd_value[rth['start_sample']:rth['stop_sample']+1, :]
+        rd_view['i'][:, channel_array] = \
+            actual_data[0::2].reshape((-1, n_actual_channels))
+        rd_view['q'][:, channel_array] = \
+            actual_data[1::2].reshape((-1, n_actual_channels))
 
-        data_q = actual_data[1::2].reshape((n_actual_samples, -1), order='F')
-        rd['value']['q'][
-            rth['channel_array'],
-            slice(rth['start_sample'], rth['stop_sample'] + 1)] =  data_q
+        rth['channel_array'] = channel_array
+        rd = dict(value=rd_value)
 
         return rth, rd, None
 
@@ -368,6 +366,7 @@ DataRecord._instances[7004] = _DataRecord7004()
 DataRecord._instances[7200] = _DataRecord7200()
 DataRecord._instances[7300] = _DataRecord7300()
 DataRecord._instances[7018] = _DataRecord7018()
+DataRecord._instances[7038] = _DataRecord7038()
 DataRecord._instances[1003] = _DataRecord1003()
 DataRecord._instances[1012] = _DataRecord1012()
 DataRecord._instances[1013] = _DataRecord1013()
