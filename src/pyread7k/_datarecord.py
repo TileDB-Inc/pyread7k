@@ -237,6 +237,71 @@ class _DataRecord7018(DataRecord):
         return rth, rd, None
 
 
+class _DataRecord7038(DataRecord):
+
+    _block_rth = DataBlock((
+        elemD_('serial_number', elemT.u64),
+        elemD_('ping_number', elemT.u32),
+        elemD_('is_multi_ping', elemT.u16),
+        elemD_('channel_count', elemT.u16),
+        elemD_('n_samples', elemT.u32),
+        elemD_('n_actual_channels', elemT.u16),
+        elemD_('start_sample', elemT.u32),
+        elemD_('stop_sample', elemT.u32),
+        elemD_('sample_type', elemT.u16),
+        elemD_(None, elemT.u32, 7)))
+
+    _block_rd_data_u16 = DataBlock((
+        elemD_('amp', elemT.u16),
+        elemD_('phs', elemT.i16)))
+
+    def _read(
+            self, source: io.RawIOBase,
+            drf: DRFBlock.DRF,
+            start_offset: int):
+        rth = self._block_rth.read(source)
+
+        n_actual_channels = rth['n_actual_channels']
+
+        block_channel_array = DataBlock((
+            elemD_('channel_array', elemT.u16, n_actual_channels),))
+
+        channel_array = block_channel_array.read_dense(source)
+        channel_array = np.squeeze(channel_array['channel_array'])
+
+        n_actual_samples = rth['stop_sample'] - rth['start_sample'] + 1
+        sample_type = rth['sample_type']
+
+        def f_block_actual_data(elemType):
+            return DataBlock((elemD_('actual_data', elemType,
+                 n_actual_channels * n_actual_samples * 2),))
+
+        if sample_type == 8:
+            actual_data = f_block_actual_data(elemT.i8).read_dense(source)
+            actual_data = np.squeeze(actual_data['actual_data'])
+            actual_data[actual_data < 0] += 65536
+            actual_data *= 16
+            actual_data[actual_data > 2047] -= 4096
+        else:
+            actual_data = f_block_actual_data(elemT.i16).read_dense(source)
+            actual_data = np.squeeze(actual_data['actual_data'])
+
+        rd_value = np.zeros(
+            (rth['n_samples'], n_actual_channels),
+            dtype=[(elem, actual_data.dtype.name) for elem in ('i', 'q')])
+
+        rd_view = rd_value[rth['start_sample']:rth['stop_sample']+1, :]
+        rd_view['i'][:, channel_array] = \
+            actual_data[0::2].reshape((-1, n_actual_channels))
+        rd_view['q'][:, channel_array] = \
+            actual_data[1::2].reshape((-1, n_actual_channels))
+
+        rth['channel_array'] = channel_array
+        rd = dict(value=rd_value)
+
+        return rth, rd, None
+
+
 class _DataRecord1003(DataRecord):
 
     """Position - GPS Coordinates"""
@@ -301,6 +366,7 @@ DataRecord._instances[7004] = _DataRecord7004()
 DataRecord._instances[7200] = _DataRecord7200()
 DataRecord._instances[7300] = _DataRecord7300()
 DataRecord._instances[7018] = _DataRecord7018()
+DataRecord._instances[7038] = _DataRecord7038()
 DataRecord._instances[1003] = _DataRecord1003()
 DataRecord._instances[1012] = _DataRecord1012()
 DataRecord._instances[1013] = _DataRecord1013()
