@@ -240,16 +240,20 @@ class _DataRecord7018(DataRecord):
 class _DataRecord7038(DataRecord):
 
     _block_rth = DataBlock((
-        elemD_('serial_number', elemT.u64),
-        elemD_('ping_number', elemT.u32),
-        elemD_('is_multi_ping', elemT.u16),
-        elemD_('channel_count', elemT.u16),
-        elemD_('n_samples', elemT.u32),
-        elemD_('n_actual_channels', elemT.u16),
-        elemD_('start_sample', elemT.u32),
-        elemD_('stop_sample', elemT.u32),
-        elemD_('sample_type', elemT.u16),
-        elemD_(None, elemT.u32, 7)))
+        elemD_('serial_number', elemT.u64),  # Sonar serial number
+        elemD_('ping_number', elemT.u32),  # Sequential number
+        elemD_(None, elemT.u16),  # Reserved (zeroed) but see note 1 below
+        elemD_('channel_count', elemT.u16),  # Num system Rx elements
+        elemD_('n_samples', elemT.u32),  # Num samples within ping
+        elemD_('n_actual_channels', elemT.u16),  # Num elems in record
+        elemD_('start_sample', elemT.u32),  # First sample in record
+        elemD_('stop_sample', elemT.u32),  # Last sample in record
+        elemD_('sample_type', elemT.u16),  # Sample type ID
+        elemD_(None, elemT.u32, 7)))  # Reserved (zeroed)
+
+    # Note 1: Original DFD20724.docx document defines this element as
+    # 'Reserved u16'. The MATLAB reader parses this as "multipingSequence".
+    # This implementation follows the document and sets as reserved.
 
     _block_rd_data_u16 = DataBlock((
         elemD_('amp', elemT.u16),
@@ -268,6 +272,7 @@ class _DataRecord7038(DataRecord):
 
         channel_array = block_channel_array.read_dense(source)
         channel_array = np.squeeze(channel_array['channel_array'])
+        rth['channel_array'] = channel_array
 
         n_actual_samples = rth['stop_sample'] - rth['start_sample'] + 1
         sample_type = rth['sample_type']
@@ -276,15 +281,31 @@ class _DataRecord7038(DataRecord):
             return DataBlock((elemD_('actual_data', elemType,
                  n_actual_channels * n_actual_samples * 2),))
 
+        # From document DFD20724.docx:
+        # System data is always 16 bits I & Q. Sample type is used only for
+        # the purpose of the compatibility with older tools. The following
+        # values can be contained by the field:
+        #    12 – Data is reported as i16 I and i16 Q aligned with four least
+        #         significant bits truncated and aligned by LSB.
+        #    16 – Data is reported as i16 I and i16 Q as received from Rx HW.
+        #     8 – Data is reported as i8 I and i8 Q. Only most significant
+        #         eight bits of 16-bit data are used.
+        #     0 – Indicates that the data is not valid.
+
         if sample_type == 8:
+            # from MATLAB reader:
             actual_data = f_block_actual_data(elemT.i8).read_dense(source)
             actual_data = np.squeeze(actual_data['actual_data'])
             actual_data[actual_data < 0] += 65536
             actual_data *= 16
             actual_data[actual_data > 2047] -= 4096
-        else:
+        elif sample_type == 16:
             actual_data = f_block_actual_data(elemT.i16).read_dense(source)
             actual_data = np.squeeze(actual_data['actual_data'])
+        else:
+            # Data is either invalid (0) or 12 bit (not supported):
+            rd = dict(value=f'Unsupported sample type ID {sample_type}')
+            return rth, rd, None  # <-- early RETURN
 
         rd_value = np.zeros(
             (rth['n_samples'], n_actual_channels),
@@ -296,9 +317,7 @@ class _DataRecord7038(DataRecord):
         rd_view['q'][:, channel_array] = \
             actual_data[1::2].reshape((-1, n_actual_channels))
 
-        rth['channel_array'] = channel_array
         rd = dict(value=rd_value)
-
         return rth, rd, None
 
 
