@@ -16,6 +16,15 @@ with open(filename, 'rb', buffering=0) as fid:
     file_catalog = r7k.read_file_catalog(fid, file_header)
     n_records = r7k.get_record_count(7018, file_catalog)
     print(f"Total num records = {n_records}")
-    count = 10
+    count = 1
     records = dict()
+    records[7018] = r7k.read_records(7018, fid, file_catalog, count=count)
     records[7038] = r7k.read_records(7038, fid, file_catalog, count=count)
+
+# %% Show first I/Q record:
+plt.figure('Beamformed')
+plt.imshow(records[7018][0].rd['amp'], origin='lower', aspect='auto')
+plt.figure('Raw I')
+plt.imshow(records[7038][0].rd['value']['i'], origin='lower', aspect='auto')
+plt.figure('Raw Q')
+plt.imshow(records[7038][0].rd['value']['q'], origin='lower', aspect='auto')
