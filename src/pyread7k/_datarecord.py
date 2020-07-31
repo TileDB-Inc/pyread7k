@@ -210,6 +210,28 @@ class _DataRecord7004(DataRecord):
         return rth, rd, None
 
 
+class _DataRecord7010(DataRecord):
+    """ TVG Values """
+
+    _block_rth = DataBlock((
+        elemD_('sonar_id', elemT.u64),
+        elemD_('ping_number', elemT.u32),
+        elemD_('is_multi_ping', elemT.u16),
+        elemD_('sample_count', elemT.u32),
+        elemD_(None, elemT.u32, 8)))
+
+    _block_gain_sample = DataBlock((elemD_('gain', elemT.f32), ))
+
+    def _read(
+            self, source: io.RawIOBase,
+            drf: DRFBlock.DRF,
+            start_offset: int):
+        rth = self._block_rth.read(source)
+        sample_count = rth['sample_count']
+        rd = self._block_gain_sample.read_dense(source, sample_count)
+        return rth, rd, None
+
+
 class _DataRecord7018(DataRecord):
 
     _block_rth = DataBlock((
@@ -384,6 +406,7 @@ DataRecord._instances[7000] = _DataRecord7000()
 DataRecord._instances[7004] = _DataRecord7004()
 DataRecord._instances[7200] = _DataRecord7200()
 DataRecord._instances[7300] = _DataRecord7300()
+DataRecord._instances[7010] = _DataRecord7010()
 DataRecord._instances[7018] = _DataRecord7018()
 DataRecord._instances[7038] = _DataRecord7038()
 DataRecord._instances[1003] = _DataRecord1003()
