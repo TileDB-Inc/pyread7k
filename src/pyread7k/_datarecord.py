@@ -10,12 +10,38 @@ import abc
 from collections import namedtuple
 
 
-DataParts = namedtuple('DataParts', (
+# DataParts = namedtuple('DataParts', (
+#     'drf',
+#     'rth',
+#     'rd',
+#     'od',
+#     'checksum'))
+DataPartsBase = namedtuple('DataParts', (
     'drf',
     'rth',
     'rd',
     'od',
     'checksum'))
+
+class DataParts(DataPartsBase):
+    """
+    Extends DataPartsBase to provide some more descriptive names
+    """
+    @property
+    def frame(self):
+        return self.drf
+
+    @property
+    def header(self):
+        return self.rth
+
+    @property
+    def data(self):
+        return self.rd
+
+    @property
+    def optional_data(self):
+        return self.od
 
 
 class DataRecord(metaclass=abc.ABCMeta):
@@ -62,7 +88,7 @@ class _DataRecord7000(DataRecord):
 
     _block_rth = DataBlock((
         elemD_('sonar_id', elemT.u64),
-        elemD_('ping', elemT.u32),
+        elemD_('ping_number', elemT.u32),
         elemD_('is_multi_ping', elemT.u16),
         elemD_('freq', elemT.f32),
         elemD_('sample_rate', elemT.f32),
