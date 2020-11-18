@@ -2,6 +2,7 @@
 # import itertools
 # import math
 import os
+import datetime
 
 import psutil
 
@@ -14,20 +15,28 @@ path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_b
 def print_current_memory():
     """ Prints current memory of active process """
     pid = os.getpid()
-    py = psutil.Process(pid)
-    memory_use = py.memory_info()[0] / (1024**2)
+    own_process = psutil.Process(pid)
+    memory_use = own_process.memory_info()[0] / (1024**2)
     print('Memory use:', memory_use, "MB")
 
 # %%
-dataset = PingDataset(path, include=PingType.BEAMFORMED)
+dataset = PingDataset(path, include=PingType.ANY)
 # %%
 
 print("Before:")
 print_current_memory()
 
+before_time = datetime.datetime.now()
 for ping in dataset:
-    print(ping, "Beamformed", ping.beamformed.data["amp"].shape)
-    print(ping, "TVG", ping.tvg.data["gain"].shape)
+    print(ping)
+    if ping.beamformed is not None:
+        print("- Beamformed", ping.beamformed.data["amp"].shape)
+        print("- Beam Geometry", ping.beam_geometry.data.shape)
+    if ping.raw_iq is not None:
+        print("- Raw IQ", ping.raw_iq.data["i"].shape)
+
+after_time = datetime.datetime.now()
+print("Time taken: %.4f s" % (after_time - before_time).total_seconds())
 
 print("After:")
 print_current_memory()
@@ -38,6 +47,7 @@ for ping in dataset:
 print("Minimized:")
 print_current_memory()
 # %%
+# print(ping, "TVG", ping.tvg.data["gain"].shape)
 
 
 full_dataset = PingDataset(path, include=PingType.ANY)

@@ -359,8 +359,7 @@ class _DataRecord7038(DataRecord):
         rd_view['q'][:, channel_array] = \
             actual_data[1::2].reshape((-1, n_actual_channels))
 
-        rd = dict(value=rd_value)
-        return rth, rd, None
+        return rth, rd_value, None
 
 
 class _DataRecord1003(DataRecord):

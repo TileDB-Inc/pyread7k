@@ -69,6 +69,10 @@ class Manager7k:
         """
         record_offsets = self._offsets_for_type[record_type]
         next_index = np.searchsorted(record_offsets, offset_start, side="right")
+
+        if next_index == len(record_offsets):
+            # Reached end of offsets without match
+            return None 
         offset = record_offsets[next_index]
         if offset < offset_end:
             # No record exists in the interval
@@ -89,12 +93,12 @@ class Ping:
     Properties of the ping are loaded efficiently on-demand.
     """
 
-    minimizable_properties = ["beamformed", "tvg"]
+    minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
 
     def __init__(self, settings_record, settings_offset : int,
                  next_offset : int, manager : Manager7k):
         self.records = {
-            7300: settings_record,
+            7000: settings_record,
         }
         self.manager = manager
         self.ping_number = settings_record.header["ping_number"]
@@ -107,7 +111,7 @@ class Ping:
         )
 
     def __str__(self):
-        return "<Ping %i>" % self.records[7300].header["ping_number"]
+        return "<Ping %i>" % self.records[7000].header["ping_number"]
 
     def minimize_memory(self):
         """
@@ -129,13 +133,36 @@ class Ping:
         if offset is None:
             return None
         record = self.manager.read_record(record_type, offset)
-        assert record.header["ping_number"] == self.ping_number
+        if "ping_number" in record.header:
+            # If record contains ping number, we double-check validity
+            assert record.header["ping_number"] == self.ping_number
         return record
+    
+    def _get_time_interval_records(self, record_type : int):
+        """
+        Read all records of the type within a time interval.
+        From the Data Format Definition:
+            "
+            The 7k sonar source logs data in order it is received. In the case of sonar data, this
+            guarantees that the pings are logged in sequential (and therefore chronological)
+            order. In general, however, the data in a log file cannot be guaranteed to be in
+            chronological order.
+            "
+        Therefore we cannot assume a particular offset interval contains all
+        data, we have to load it and inspect.
+        """
+        raise NotImplementedError("Soon!")
+
 
     @property
     def sonar_settings(self):
         """ Returns 7000 record """
-        return self.records[7300]
+        return self.records[7000]
+
+    @cached_property
+    def beam_geometry(self) -> DataParts:
+        """ Returns 7004 record """
+        return self._get_single_associated_record(7004)
 
     @cached_property
     def tvg(self):
@@ -143,14 +170,19 @@ class Ping:
         return self._get_single_associated_record(7010)
 
     @cached_property
-    def beamformed(self) -> DataParts:
-        """ Returns 7018 records """
-        return self._get_single_associated_record(7018)
-
-    @cached_property
     def has_beamformed_data(self):
         """ Checks if the ping has 7018 data without reading it. """
         return self.offset_map[7018] is not None
+
+    @cached_property
+    def beamformed(self) -> DataParts:
+        """ Returns 7018 record """
+        return self._get_single_associated_record(7018)
+
+    @cached_property
+    def raw_iq(self) -> DataParts:
+        """ Returns 7038 record """
+        return self._get_single_associated_record(7038)
 
 
 # %%
