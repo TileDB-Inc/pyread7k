@@ -2,6 +2,11 @@
 This module is an abstraction on top of the low-level 7k records, which allows
 the user to work in terms of "pings" with associated data, instead of thinking
 in the traditional 7k records.
+
+Expected order of records for a ping:
+7000, 7503, 1750, 7002, 7004, 7017, 7006, 7027, 7007, 7008, 7010, 7011, 7012,
+7013, 7018, 7019, 7028, 7029, 7037, 7038, 7039, 7041, 7042, 7048, 7049, 7057,
+7058, 7068, 7070
 """
 # %%
 from enum import Enum
@@ -26,7 +31,7 @@ class LazyMap(dict):
         if key not in self:
             self[key] = self.initializer(key)
         return super().__getitem__(key)
-        
+
 
 
 class Manager7k:
@@ -95,7 +100,11 @@ class Ping:
         self.ping_number = settings_record.header["ping_number"]
         self._own_offset = settings_offset # This ping's start offset
         self._next_offset = next_offset # Next ping's start offset, meaning this ping has ended
-        self.cached_offsets = {}
+
+        self.offset_map = LazyMap(
+            initializer=lambda key: self.manager.get_next_offset(
+                key, self._own_offset, self._next_offset)
+        )
 
     def __str__(self):
         return "<Ping %i>" % self.records[7300].header["ping_number"]
@@ -109,46 +118,44 @@ class Ping:
             if key in self.__dict__:
                 del self.__dict__[key]
 
-    @cached_property
-    def beamformed(self) -> DataParts:
-        """ Returns 7018 records """
-        if not self.has_beamformed_data: # Forces loading offset into cache
-            return None
-        record = self.manager.read_record(7018, self.cached_offsets[7018])
-        assert record.header["ping_number"] == self.ping_number
-        return record
-
-    @cached_property
-    def has_beamformed_data(self):
-        """ Checks if the ping has 7018 data without reading it. """
-        offset = self.manager.get_next_offset(7018, self._own_offset, self._next_offset)
-        self.cached_offsets[7018] = offset
-        return offset is not None
-
     def _get_single_associated_record(self, record_type : int):
         """
         Read a record associated with the ping. The requested record must:
         - Be the only of its type for the ping
+        - Be located in the file between this ping's 7000 record and the next
+          ping' 7000 record.
         """
-        offset = self.manager.get_next_offset(record_type, self._own_offset,
-            self._next_offset)
+        offset = self.offset_map[record_type]
         if offset is None:
             return None
         record = self.manager.read_record(record_type, offset)
         assert record.header["ping_number"] == self.ping_number
         return record
 
-    @cached_property
-    def tvg(self):
-        return self._get_single_associated_record(7010)
-
     @property
     def sonar_settings(self):
+        """ Returns 7000 record """
         return self.records[7300]
+
+    @cached_property
+    def tvg(self):
+        """ Returns 7010 record """
+        return self._get_single_associated_record(7010)
+
+    @cached_property
+    def beamformed(self) -> DataParts:
+        """ Returns 7018 records """
+        return self._get_single_associated_record(7018)
+
+    @cached_property
+    def has_beamformed_data(self):
+        """ Checks if the ping has 7018 data without reading it. """
+        return self.offset_map[7018] is not None
 
 
 # %%
 class PingType(Enum):
+    """ Kinds of pings based on what data they have available """
     BEAMFORMED = 1
     IQ = 2
     ANY = 3
@@ -191,21 +198,3 @@ class PingDataset:
 
     def __getitem__(self, index: int) -> Ping:
         return self.pings[index]
-
-    # def __getstate__(self):
-    #     """
-    #     Remove unpicklable file handle from dict before pickling
-    #     """
-    #     state = self.__dict__.copy()
-    #     del state["fhandle"]
-    #     return state
-
-    # def __setstate__(self, state):
-    #     """
-    #     Open new file handle after unpickling
-    #     """
-    #     self.__dict__.update(state)
-    #     self.fhandle = open(self.filename, "rb", buffering=0)
-
-    # def __del__(self):
-    #     self.fhandle.close()
