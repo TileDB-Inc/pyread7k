@@ -15,7 +15,7 @@ def print_current_memory():
     pid = os.getpid()
     py = psutil.Process(pid)
     memory_use = py.memory_info()[0] / (1024**2)
-    print('memory use:', memory_use, "MB")
+    print('Memory use:', memory_use, "MB")
 
 # %%
 dataset = PingDataset(path, include=PingType.BEAMFORMED)

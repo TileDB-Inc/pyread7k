@@ -10,12 +10,6 @@ import abc
 from collections import namedtuple
 
 
-# DataParts = namedtuple('DataParts', (
-#     'drf',
-#     'rth',
-#     'rd',
-#     'od',
-#     'checksum'))
 DataPartsBase = namedtuple('DataParts', (
     'drf',
     'rth',
