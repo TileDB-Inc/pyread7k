@@ -5,6 +5,7 @@ import struct
 import abc
 from collections import namedtuple
 from collections import defaultdict
+import datetime
 
 
 _ElementTypes = namedtuple('_ElementTypes', [
@@ -126,25 +127,38 @@ class DataBlock(metaclass=abc.ABCMeta):
                 continue
             yield next(names_iter), part_a
 
+# Using only primitive fields, for parsing.
+DRF_PRIMITIVE_FIELDS = (
+    'protocol_version',
+    'offset',
+    'sync_pattern',
+    'size',
+    'od_offset',
+    'od_id',
+
+    # The DFD is mistaken, time is NOT u8 * 10. Needs special handling.
+    'time_year',
+    'time_day',
+    'time_seconds',
+    'time_hours',
+    'time_minutes',
+
+    'record_version',
+    'record_type_id',
+    'device_id',
+    'system_enum',
+    'flags',
+    'total_records_frag',
+    'frag_number')
+
+# Removes partial time fields, and adds a proper time field.
+DRF_REFINED_FIELDS = list(filter(
+    lambda name: not name.startswith("time_"),
+    DRF_PRIMITIVE_FIELDS)) + ["time"]
 
 class DRFBlock(DataBlock):
 
-    DRF = namedtuple(
-        'DRF', (
-            'protocol_version',
-            'offset',
-            'sync_pattern',
-            'size',
-            'od_offset',
-            'od_id',
-            'time',
-            'record_version',
-            'record_type_id',
-            'device_id',
-            'system_enum',
-            'flags',
-            'total_records_frag',
-            'frag_number'))
+    DRF = namedtuple("DRF", DRF_REFINED_FIELDS)
 
     def __init__(self):
         elements = tuple(self._util_gen_elements((
@@ -154,7 +168,14 @@ class DRFBlock(DataBlock):
             ((elemT.u32, ),  None),
             ((elemT.u32, ),  None),
             ((elemT.u32, ),  None),
-            ((elemT.u8, 10), None),
+
+            # Time fields
+            ((elemT.u16, ), None),
+            ((elemT.u16, ), None),
+            ((elemT.f32, ), None),
+            ((elemT.u8, ), None),
+            ((elemT.u8, ), None),
+
             ((elemT.u16, ),  None),
             ((elemT.u32, ),  None),
             ((elemT.u32, ),  None),
@@ -166,8 +187,28 @@ class DRFBlock(DataBlock):
             (None, (elemT.u32, )),
             ((elemT.u32, ),  None),
             ((elemT.u32, ),  None)),
-            names=self.DRF._fields))
+            names=DRF_PRIMITIVE_FIELDS))
         super().__init__(elements)
 
     def read(self, source: io.RawIOBase):
-        return self.DRF(**super().read(source))
+        init_data = super().read(source)
+
+        time = datetime.datetime(year=init_data["time_year"], month=1, day=1)
+        # We have raw days, datetime takes days and months.
+        # Easier to just add them as timedelta, and let datetime worry about
+        # leap-whatever
+        time += datetime.timedelta(
+            days=init_data["time_day"] - 1, # Subtract 1 since datetime already starts at 1.
+            hours=init_data["time_hours"],
+            minutes=init_data["time_minutes"],
+            seconds=init_data["time_seconds"],
+        )
+        init_data["time"] = time
+        # Remove raw time parts from data
+        del init_data["time_year"]
+        del init_data["time_day"]
+        del init_data["time_hours"]
+        del init_data["time_minutes"]
+        del init_data["time_seconds"]
+
+        return self.DRF(**init_data)
