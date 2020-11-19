@@ -33,7 +33,6 @@ class LazyMap(dict):
         return super().__getitem__(key)
 
 
-
 class Manager7k:
     """
     Internal class for Pings to share access to a file.
@@ -41,7 +40,6 @@ class Manager7k:
     def __init__(self, fhandle, file_catalog):
         self.fhandle = fhandle
         self.file_catalog = file_catalog
-        # self.cached_offsets = {}
         self._offsets_for_type = LazyMap(
             initializer=lambda key: get_record_offsets(
                 key, self.file_catalog)
@@ -72,7 +70,7 @@ class Manager7k:
 
         if next_index == len(record_offsets):
             # Reached end of offsets without match
-            return None 
+            return None
         offset = record_offsets[next_index]
         if offset < offset_end:
             # No record exists in the interval
@@ -86,6 +84,65 @@ class Manager7k:
         self.fhandle.seek(offset)
         return _datarecord.record(record_type).read(self.fhandle)
 
+    def get_records_during_ping(self, record_type, ping_start, ping_end, offset_hint):
+        """
+        Reads all records of record_type which are timestamped in the interval.
+
+        Performs a brute-force search starting around the offset_hint. If the
+        hint is good (which it should usually be), this is pretty efficient.
+
+        Records of different types are not guaranteed to be chronological, so
+        we cannot know a specific record interval to search.
+        """
+        record_offsets = self._offsets_for_type[record_type]
+        initial_index = np.searchsorted(record_offsets, offset_hint)
+
+
+        searching_backward = True
+        searching_forward = True
+
+
+        # Search forward in file
+        forward_records = []
+        index = initial_index
+        while searching_forward:
+            if index == len(record_offsets):
+                # Reached end of file
+                break
+            next_record = self.read_record(record_type, record_offsets[index])
+            if ping_end is not None and next_record.frame.time > ping_end:
+                # Reached upper end of interval
+                searching_forward = False
+            elif not next_record.frame.time > ping_start:
+                # Did not yet reach interval, backward search is unnecessary
+                searching_backward = False
+            else:
+                forward_records.append(next_record)
+            index += 1
+
+        # Search backward in file
+        backward_records = []
+        index = initial_index - 1
+        while searching_backward:
+            if index == -1:
+                break # Reached start of file
+
+            next_record = self.read_record(record_type, record_offsets[index])
+            if next_record.frame.time < ping_start:
+                # Reached lower end of interval
+                searching_backward = False
+            elif ping_end is not None and not next_record.frame.time < ping_end:
+                # Did not yet reach interval
+                pass
+            else:
+                backward_records.append(next_record)
+            index -= 1
+        # Discovered in reverse order, so un-reverse
+        backward_records.reverse()
+
+        return backward_records + forward_records
+
+
 
 class Ping:
     """
@@ -96,22 +153,25 @@ class Ping:
     minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
 
     def __init__(self, settings_record, settings_offset : int,
-                 next_offset : int, manager : Manager7k):
-        self.records = {
-            7000: settings_record,
-        }
-        self.manager = manager
+                 next_record, next_offset : int, manager : Manager7k):
+
+        # This is the only record always in-memory, as it defines the ping.
+        self.sonar_settings = settings_record
         self.ping_number = settings_record.header["ping_number"]
+
+        self._manager = manager
         self._own_offset = settings_offset # This ping's start offset
         self._next_offset = next_offset # Next ping's start offset, meaning this ping has ended
+        self.next_ping_start = (next_record.frame.time
+            if next_record is not None else None)
 
-        self.offset_map = LazyMap(
-            initializer=lambda key: self.manager.get_next_offset(
+        self._offset_map = LazyMap(
+            initializer=lambda key: self._manager.get_next_offset(
                 key, self._own_offset, self._next_offset)
         )
 
     def __str__(self):
-        return "<Ping %i>" % self.records[7000].header["ping_number"]
+        return "<Ping %i>" % self.sonar_settings.header["ping_number"]
 
     def minimize_memory(self):
         """
@@ -129,35 +189,35 @@ class Ping:
         - Be located in the file between this ping's 7000 record and the next
           ping' 7000 record.
         """
-        offset = self.offset_map[record_type]
+        offset = self._offset_map[record_type]
         if offset is None:
             return None
-        record = self.manager.read_record(record_type, offset)
+        record = self._manager.read_record(record_type, offset)
         if "ping_number" in record.header:
             # If record contains ping number, we double-check validity
             assert record.header["ping_number"] == self.ping_number
         return record
-    
-    def _get_time_interval_records(self, record_type : int):
-        """
-        Read all records of the type within a time interval.
-        From the Data Format Definition:
-            "
-            The 7k sonar source logs data in order it is received. In the case of sonar data, this
-            guarantees that the pings are logged in sequential (and therefore chronological)
-            order. In general, however, the data in a log file cannot be guaranteed to be in
-            chronological order.
-            "
-        Therefore we cannot assume a particular offset interval contains all
-        data, we have to load it and inspect.
-        """
-        raise NotImplementedError("Soon!")
 
+    @cached_property
+    def position_set(self) -> DataParts:
+        """ Returns all 1003 records timestamped within this ping. """
+        return self._manager.get_records_during_ping(
+            1003, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
 
-    @property
-    def sonar_settings(self):
-        """ Returns 7000 record """
-        return self.records[7000]
+    @cached_property
+    def roll_pitch_heave_set(self) -> DataParts:
+        """ Returns all 1012 records timestamped within this ping. """
+        return self._manager.get_records_during_ping(
+            1012, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
+
+    @cached_property
+    def heading_set(self) -> DataParts:
+        """ Returns all 1013 records timestamped within this ping. """
+        return self._manager.get_records_during_ping(
+            1013, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
 
     @cached_property
     def beam_geometry(self) -> DataParts:
@@ -165,19 +225,24 @@ class Ping:
         return self._get_single_associated_record(7004)
 
     @cached_property
-    def tvg(self):
+    def tvg(self) -> DataParts:
         """ Returns 7010 record """
         return self._get_single_associated_record(7010)
 
     @cached_property
-    def has_beamformed_data(self):
+    def has_beamformed(self) -> bool:
         """ Checks if the ping has 7018 data without reading it. """
-        return self.offset_map[7018] is not None
+        return self._offset_map[7018] is not None
 
     @cached_property
     def beamformed(self) -> DataParts:
         """ Returns 7018 record """
         return self._get_single_associated_record(7018)
+
+    @cached_property
+    def has_raw_iq(self) -> bool:
+        """ Checks if the ping has 7038 data without reading it. """
+        return self._offset_map[7038] is not None
 
     @cached_property
     def raw_iq(self) -> DataParts:
@@ -211,19 +276,23 @@ class PingDataset:
         file_catalog = read_file_catalog(self.fhandle, file_header)
 
         manager = Manager7k(self.fhandle, file_catalog)
+
         settings_records = read_records(7000, self.fhandle, file_catalog)
         settings_offsets = get_record_offsets(7000, file_catalog)
-        pings = [Ping(rec, offset, next_off, manager) for rec, offset, next_off
-                          in zip(settings_records, settings_offsets,
-                                 settings_offsets[1:] + (math.inf,))]
+        settings_and_offsets = list(zip(settings_records, settings_offsets))
+
+        pings = [Ping(rec, offset, next_rec, next_off, manager) for (rec, offset), (next_rec, next_off)
+                          in zip(settings_and_offsets,
+                                 settings_and_offsets[1:] + [(None, math.inf),])]
 
         if include == PingType.BEAMFORMED:
-            self.pings = [p for p in pings if p.has_beamformed_data]
+            self.pings = [p for p in pings if p.has_beamformed]
         elif include == PingType.IQ:
-            self.pings = pings # TODO: Make actual filter
+            self.pings = [p for p in pings if p.has_raw_iq]
         elif include == PingType.ANY:
             self.pings = pings
-
+        else:
+            raise NotImplementedError("Encountered unknown PingType: %s"  % str(include))
 
     def __len__(self) -> int:
         return len(self.pings)

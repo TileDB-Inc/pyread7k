@@ -20,7 +20,12 @@ def print_current_memory():
     print('Memory use:', memory_use, "MB")
 
 # %%
-dataset = PingDataset(path, include=PingType.ANY)
+dataset = PingDataset(path, include=PingType.IQ)
+# %%
+# for ping in dataset[:4]:
+#     print("Ping time", ping.sonar_settings.frame.time)
+#     for position in ping.position_set():
+#         print(position.frame.time)
 # %%
 
 print("Before:")
@@ -29,6 +34,9 @@ print_current_memory()
 before_time = datetime.datetime.now()
 for ping in dataset:
     print(ping)
+    print("- Position records:", len(ping.position_set))
+    print("- Roll pitch heave records:", len(ping.roll_pitch_heave_set))
+    print("- Heading records:", len(ping.heading_set))
     if ping.beamformed is not None:
         print("- Beamformed", ping.beamformed.data["amp"].shape)
         print("- Beam Geometry", ping.beam_geometry.data.shape)
@@ -46,10 +54,4 @@ for ping in dataset:
 
 print("Minimized:")
 print_current_memory()
-# %%
-# print(ping, "TVG", ping.tvg.data["gain"].shape)
-
-
-full_dataset = PingDataset(path, include=PingType.ANY)
-print(len(full_dataset), len(dataset))
 # %%

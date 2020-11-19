@@ -37,6 +37,9 @@ class DataParts(DataPartsBase):
     def optional_data(self):
         return self.od
 
+    def __str__(self):
+        return f"DataParts(type={self.frame.record_type_id}, time={self.frame.time})"
+
 
 class DataRecord(metaclass=abc.ABCMeta):
 
