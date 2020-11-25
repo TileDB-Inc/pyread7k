@@ -56,7 +56,7 @@ class DataRecord(metaclass=abc.ABCMeta):
         source.seek(4, io.SEEK_CUR)  # to sync pattern
         source.seek(drf.offset, io.SEEK_CUR)
         rth, rd, od = self._read(source, drf, start_offset)
-        checksum = self._block_checksum.read(source)
+        checksum = self._block_checksum.read(source)["checksum"]
         source.seek(start_offset)  # reset source to start
         return DataParts(**dict(zip(
             DataParts._fields,

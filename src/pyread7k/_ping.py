@@ -11,6 +11,7 @@ Expected order of records for a ping:
 # %%
 from enum import Enum
 from functools import cached_property
+from typing import Optional, List
 import math
 
 import numpy as np
@@ -18,6 +19,7 @@ import numpy as np
 from ._utils import read_file_catalog, read_file_header, read_records, get_record_offsets
 from . import _datarecord
 from ._datarecord import DataParts
+
 
 class LazyMap(dict):
     """
@@ -97,10 +99,8 @@ class Manager7k:
         record_offsets = self._offsets_for_type[record_type]
         initial_index = np.searchsorted(record_offsets, offset_hint)
 
-
         searching_backward = True
         searching_forward = True
-
 
         # Search forward in file
         forward_records = []
@@ -143,7 +143,6 @@ class Manager7k:
         return backward_records + forward_records
 
 
-
 class Ping:
     """
     A sound ping from a sonar, with associated data about settings and conditions.
@@ -152,12 +151,12 @@ class Ping:
 
     minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
 
-    def __init__(self, settings_record, settings_offset : int,
+    def __init__(self, settings_record : DataParts, settings_offset : int,
                  next_record, next_offset : int, manager : Manager7k):
 
         # This is the only record always in-memory, as it defines the ping.
-        self.sonar_settings = settings_record
-        self.ping_number = settings_record.header["ping_number"]
+        self.sonar_settings : DataParts = settings_record
+        self.ping_number : int = settings_record.header["ping_number"]
 
         self._manager = manager
         self._own_offset = settings_offset # This ping's start offset
@@ -170,10 +169,10 @@ class Ping:
                 key, self._own_offset, self._next_offset)
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<Ping %i>" % self.sonar_settings.header["ping_number"]
 
-    def minimize_memory(self):
+    def minimize_memory(self) -> None:
         """
         Clears all memory-heavy properties.
         Retains offsets for easy reloading.
@@ -199,33 +198,33 @@ class Ping:
         return record
 
     @cached_property
-    def position_set(self) -> DataParts:
+    def position_set(self) -> List[DataParts]:
         """ Returns all 1003 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1003, self.sonar_settings.frame.time, self.next_ping_start,
             self._own_offset)
 
     @cached_property
-    def roll_pitch_heave_set(self) -> DataParts:
+    def roll_pitch_heave_set(self) -> List[DataParts]:
         """ Returns all 1012 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1012, self.sonar_settings.frame.time, self.next_ping_start,
             self._own_offset)
 
     @cached_property
-    def heading_set(self) -> DataParts:
+    def heading_set(self) -> List[DataParts]:
         """ Returns all 1013 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1013, self.sonar_settings.frame.time, self.next_ping_start,
             self._own_offset)
 
     @cached_property
-    def beam_geometry(self) -> DataParts:
+    def beam_geometry(self) -> Optional[DataParts]:
         """ Returns 7004 record """
         return self._get_single_associated_record(7004)
 
     @cached_property
-    def tvg(self) -> DataParts:
+    def tvg(self) -> Optional[DataParts]:
         """ Returns 7010 record """
         return self._get_single_associated_record(7010)
 
@@ -235,7 +234,7 @@ class Ping:
         return self._offset_map[7018] is not None
 
     @cached_property
-    def beamformed(self) -> DataParts:
+    def beamformed(self) -> Optional[DataParts]:
         """ Returns 7018 record """
         return self._get_single_associated_record(7018)
 
@@ -245,7 +244,7 @@ class Ping:
         return self._offset_map[7038] is not None
 
     @cached_property
-    def raw_iq(self) -> DataParts:
+    def raw_iq(self) -> Optional[DataParts]:
         """ Returns 7038 record """
         return self._get_single_associated_record(7038)
 
@@ -264,7 +263,7 @@ class PingDataset:
 
     Provides random access into pings in a file with minimal overhead.
     """
-    def __init__(self, filename, include=PingType.ANY):
+    def __init__(self, filename, include : PingType=PingType.ANY):
         """
         if include argument is not ANY, pings will be filtered.
         """
@@ -299,3 +298,28 @@ class PingDataset:
 
     def __getitem__(self, index: int) -> Ping:
         return self.pings[index]
+
+
+class ConcatDataset:
+    """
+    Reimplementation of Pytorch ConcatDataset to avoid dependency
+    """
+    def __init__(self, datasets):
+
+        self.cum_lengths = np.cumsum([len(d) for d in datasets])
+        self.datasets = datasets
+
+    def __len__(self):
+        return self.cum_lengths[-1]
+
+    def __getitem__(self, index):
+        if index < 0:
+            if -index > len(self):
+                raise ValueError("Index out of range")
+            index = len(self) + index
+        dataset_index = np.searchsorted(self.cum_lengths, index, side="right")
+        if dataset_index == 0:
+            sample_index = index
+        else:
+            sample_index = index - self.cum_lengths[dataset_index - 1]
+        return self.datasets[dataset_index][sample_index]

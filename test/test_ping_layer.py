@@ -9,7 +9,8 @@ import psutil
 from pyread7k import PingDataset, PingType
 # import pyread7k
 
-path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_beamformed/Port_200kHz_CW_125m_E/20200603_130712.s7k"
+# path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_beamformed/Port_200kHz_CW_125m_E/20200603_130712.s7k"
+path = "/home/localadmin/sonar_data/20200907_142323.s7k"
 # %%
 
 def print_current_memory():
@@ -20,12 +21,12 @@ def print_current_memory():
     print('Memory use:', memory_use, "MB")
 
 # %%
-dataset = PingDataset(path, include=PingType.IQ)
+dataset = PingDataset(path, include=PingType.BEAMFORMED)
 # %%
-# for ping in dataset[:4]:
-#     print("Ping time", ping.sonar_settings.frame.time)
-#     for position in ping.position_set():
-#         print(position.frame.time)
+for ping in dataset[:4]:
+    print("Ping time", ping.sonar_settings.frame.time)
+    # for position in ping.position_set():
+    #     print(position.frame.time)
 # %%
 
 print("Before:")
