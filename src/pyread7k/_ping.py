@@ -14,14 +14,19 @@ Expected order of records for a ping:
 # %%
 from enum import Enum
 from functools import cached_property
-from typing import Optional, List
+from typing import Optional, List, Tuple, Callable
 import math
 
 import numpy as np
+from scipy import signal
+from scipy.interpolate import RectBivariateSpline
+import geopy
 
 from ._utils import read_file_catalog, read_file_header, read_records, get_record_offsets
 from . import _datarecord
 from ._datarecord import DataParts
+from ._motion_correction import _transform_pitch, _transform_position, _transform_roll, _transform_yaw
+
 
 class PingData(Enum):
     AMPLITUDE = 0
@@ -148,7 +153,6 @@ class Manager7k:
 
         return backward_records + forward_records
 
-
 class Ping:
     """
     A sound ping from a sonar, with associated data about settings and conditions.
@@ -163,6 +167,13 @@ class Ping:
         # This is the only record always in-memory, as it defines the ping.
         self.sonar_settings : DataParts = settings_record
         self.ping_number : int = settings_record.header["ping_number"]
+        self.__amp = None
+        self.__phs = None
+        self.__decimated = False
+        self.__range_normalized = False
+        self.__beam_normalized = False
+        self.__motion_corrected = False
+        self.__movement_corrected = False
 
         self._manager = manager
         self._own_offset = settings_offset # This ping's start offset
@@ -253,10 +264,151 @@ class Ping:
     def raw_iq(self) -> Optional[DataParts]:
         """ Returns 7038 record """
         return self._get_single_associated_record(7038)
+
+    @cached_property
+    def point(self):
+        lat = self.position_set[0].header["lat"] * 180/np.pi
+        long = self.position_set[0].header["long"] * 180/np.pi
+        return geopy.Point(lat, long)
     
-    def correct_motion(self):
-        if self.has_beamformed:
-            pass
+    def __data_is_loaded(self):
+        """ Checks if data has been loaded """
+        if any([self.__amp is None, self.__phs is None]):
+            return False
+        else:
+            return True
+
+    def load_data(self):
+        """ Loads amplitude and phase data into memory """
+        if self.has_beamformed and not self.__data_is_loaded():
+            self.__amp = self.beamformed.data["amp"]
+            self.__phs = self.beamformed.data["phs"]
+
+            n_samples, n_beams = self.__amp.shape
+            sonar_range = self.sonar_settings.header["range"]
+            range_samples = np.linspace(0, sonar_range, n_samples)
+            beam_angles = self.beam_geometry.data["horz_angle"]
+            self.__dr = range_samples[1] - range_samples[0]
+
+            self.__ranges = range_samples
+            self.__beams = beam_angles
+            self.__dshape = (n_samples, n_beams)
+
+        
+    def exclude_ranges(self, min_range_meter, max_range_meter):            
+        """Excludes all data outside min_range_meter: max_range_meter"""
+        if not self.__data_is_loaded():
+            raise AttributeError("Data has not been loaded! Call load_data() first.")
+
+        min_idx = math.ceil(int(min_range_meter/self.__dr))
+        max_idx = math.ceil(int(max_range_meter/self.__dr))
+        self.__ranges = self.__ranges[min_idx:max_idx]
+        self.__amp = self.__amp[min_idx:max_idx]
+        self.__phs = self.__phs[min_idx:max_idx]
+
+
+    def decimate(self, q=8):
+        """Function used to downsample data. Default is around a factor 8"""
+        if not self.__decimated:
+            self.__amp = signal.decimate(self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
+            self.__phs = signal.decimate(self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
+            self.__dshape = self.__amp.shape
+            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.__dshape[0])
+            self.__decimated = True
+
+    def resample(self, M):
+        """Function used to resample data"""
+        self.__amp = signal.resample(self.__amp.astype(float), num=M, axis=0)
+        self.__phs = signal.resample(self.__phs.astype(float), num=M, axis=0)
+        self.__dshape = self.__amp.shape
+        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.__dshape[0])
+
+    @property
+    def range_samples(self):
+        if self.__data_is_loaded():
+            return self.__ranges
+
+    @property
+    def beam_angles(self):
+        if self.__data_is_loaded():
+            return self.__beams
+
+    @property
+    def amp(self):
+        if self.__data_is_loaded():
+            return self.__amp
+    
+    @property
+    def phs(self):
+        if self.__data_is_loaded():
+            return self.__phs
+
+    def preprocess(self, min_range_meter=80, max_range_meter=1500, decimate=8, range_normalization_func = np.median, ):
+        self.load_data()
+        self.exclude_ranges(min_range_meter=min_range_meter, max_range_meter=max_range_meter)
+        if decimate != 0:
+            self.decimate(q=decimate)
+        self.range_normalize(range_normalization_func)
+        
+
+    def range_normalize(self, func: Callable = np.median):
+        if not self.__range_normalized:
+            self.__amp = self.__amp / func(self.__amp, axis=1).reshape(-1, 1)
+            self.__range_normalized = True
+
+    def beam_normalize(self, func: Callable = np.median):
+        if not self.__beam_normalized:
+            self.__amp = self.__amp / func(self.__amp, axis=0)
+            self.__beam_normalized = True
+    
+    def correct_motion(self, distance, bearing, correct=True):
+        if not self.__data_is_loaded():
+            raise AttributeError("Data has not been loaded! Call load_data() first.")
+
+        roll = self.roll_pitch_heave_set[0].header["roll"]
+        pitch = self.roll_pitch_heave_set[0].header["pitch"]
+        heave = self.roll_pitch_heave_set[0].header["heave"]
+
+        yaw = self.heading_set[0].header["heading"] * np.pi/180
+
+        # TODO: get these from records
+        depth = 30
+        sonar_tilt = 0
+        sonar_angle = 0
+        
+        # Create a meshgrid of the beams and values
+        # since we need to modify each and every range beam pair
+        # separately
+        new_beams, new_ranges = np.meshgrid(self.beam_angles, self.range_samples)
+        range_beam = np.dstack((new_ranges, new_beams)) 
+        
+        f = RectBivariateSpline(self.range_samples, self.beam_angles, self.amp)
+        
+        transformed = False
+        if yaw != 0:
+            transformed = True
+            range_beam = _transform_yaw(range_beam, yaw=yaw, correct=correct)
+        
+        if any([roll != 0, sonar_tilt != 0]):
+            range_beam = _transform_roll(range_beam, roll=roll, sonar_tilt=sonar_tilt, correct=correct)
+
+        if transformed:
+            self.__motion_corrected = True
+        
+        # TODO: Implement pitch when sonar rotation is an option
+        #if pitch != 0:   
+        #    print("Correcting for Pitch")
+        #    transformed = True
+        #    range_beam = transform_pitch(range_beam, pitch=pitch, depth=depth, heave=heave, reverse=True)
+        
+        if all([distance != 0, bearing != 0]):
+            transformed = True
+            self.__movement_corrected = True
+            range_beam = _transform_position(range_beam, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle, correct=correct)
+        
+        if transformed:
+            self.__amp = f(range_beam[:, :, 0].flatten(), range_beam[:, :, 1].flatten(), grid=False).reshape(self.__dshape)
+        
 
 # %%
 class PingType(Enum):
@@ -307,6 +459,46 @@ class PingDataset:
 
     def __getitem__(self, index: int) -> Ping:
         return self.pings[index]
+    
+    def stack(
+            self, 
+            ping_indices: List[int], 
+            min_range_meter: float = 80, 
+            max_range_meter: float = 1500, 
+            decimate: int = 8, 
+            range_normalization_func: Callable = np.median
+        ) -> np.ndarray:
+
+        # Define empty stacking array
+        # TODO: Take variable sonar range pings into account
+
+        # Get last ping of the index
+        self.pings[ping_indices[-1]] .preprocess(
+            min_range_meter=min_range_meter,
+            max_range_meter=max_range_meter,
+            decimate=decimate,
+            range_normalization_func=range_normalization_func
+        )
+        # End ping shouldn't be translated
+        self.pings[ping_indices[-1]].correct_motion(distance=0, bearing=0)
+        end_point = self.pings[ping_indices[-1]].point
+
+        # For each other point in the list of indices correct the motion
+        # and distance, so that we have overlapping data
+        for idx in ping_indices[:-1]:
+            self.pings[idx].preprocess(
+                min_range_meter=min_range_meter,
+                max_range_meter=max_range_meter,
+                decimate=decimate,
+                range_normalization_func=range_normalization_func
+            )
+            current_point = self.pings[idx].point
+            distance_to_endpoint = geopy.distance.distance(current_point, end_point)
+            bearing_between_points = bearing(current_point, end_point)
+
+            self.pings[idx].correct_motion(distance_to_endpoint, bearing_between_points)
+
+
 
 
 class ConcatDataset:
@@ -332,3 +524,17 @@ class ConcatDataset:
         else:
             sample_index = index - self.cum_lengths[dataset_index - 1]
         return self.datasets[dataset_index][sample_index]
+
+
+
+def bearing(pointA, pointB):
+    lat1 = math.radians(pointA[0])
+    lat2 = math.radians(pointB[0])
+
+    dL = math.radians(pointB[1] - pointA[1])
+
+    x = math.sin(dL) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1)
+            * math.cos(lat2) * math.cos(dL))
+
+    return math.degrees(math.atan2(x, y))

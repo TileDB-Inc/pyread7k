@@ -18,5 +18,11 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
     ],
+    install_requires=[
+        "pytest",
+        "numpy",
+        "scipy",
+        "geopy"
+    ],
     python_requires='>=3.6',
 )
