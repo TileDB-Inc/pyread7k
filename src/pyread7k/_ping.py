@@ -7,6 +7,9 @@ Expected order of records for a ping:
 7000, 7503, 1750, 7002, 7004, 7017, 7006, 7027, 7007, 7008, 7010, 7011, 7012,
 7013, 7018, 7019, 7028, 7029, 7037, 7038, 7039, 7041, 7042, 7048, 7049, 7057,
 7058, 7068, 7070
+
+# TODO: Enable preprocessing functions in the ping class
+
 """
 # %%
 from enum import Enum
@@ -20,6 +23,9 @@ from ._utils import read_file_catalog, read_file_header, read_records, get_recor
 from . import _datarecord
 from ._datarecord import DataParts
 
+class PingData(Enum):
+    AMPLITUDE = 0
+    PHASE = 1
 
 class LazyMap(dict):
     """
@@ -247,7 +253,10 @@ class Ping:
     def raw_iq(self) -> Optional[DataParts]:
         """ Returns 7038 record """
         return self._get_single_associated_record(7038)
-
+    
+    def correct_motion(self):
+        if self.has_beamformed:
+            pass
 
 # %%
 class PingType(Enum):
