@@ -22,7 +22,8 @@ setuptools.setup(
         "pytest",
         "numpy",
         "scipy",
-        "geopy"
+        "geopy",
+        "matplotlib"
     ],
     python_requires='>=3.6',
 )

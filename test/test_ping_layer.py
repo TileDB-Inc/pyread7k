@@ -3,56 +3,56 @@
 # import math
 import os
 import datetime
-
+from test import bf_filepath
+import pytest
+import datetime
 import psutil
 
 from pyread7k import PingDataset, PingType
-# import pyread7k
 
-# path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_beamformed/Port_200kHz_CW_125m_E/20200603_130712.s7k"
-path = "/home/localadmin/sonar_data/20200907_142323.s7k"
 # %%
 
-def print_current_memory():
+def get_current_memory():
     """ Prints current memory of active process """
     pid = os.getpid()
     own_process = psutil.Process(pid)
-    memory_use = own_process.memory_info()[0] / (1024**2)
-    print('Memory use:', memory_use, "MB")
+    return own_process.memory_info()[0] / (1024**2)
+    
 
-# %%
-dataset = PingDataset(path, include=PingType.BEAMFORMED)
-# %%
-for ping in dataset[:4]:
-    print("Ping time", ping.sonar_settings.frame.time)
-    # for position in ping.position_set():
-    #     print(position.frame.time)
-# %%
+@pytest.fixture
+def dataset():
+    return PingDataset(bf_filepath, include=PingType.BEAMFORMED)
 
-print("Before:")
-print_current_memory()
+@pytest.fixture
+def ping(dataset):
+    return dataset[10]
 
-before_time = datetime.datetime.now()
-for ping in dataset:
-    print(ping)
-    print("- Position records:", len(ping.position_set))
-    print("- Roll pitch heave records:", len(ping.roll_pitch_heave_set))
-    print("- Heading records:", len(ping.heading_set))
-    if ping.beamformed is not None:
-        print("- Beamformed", ping.beamformed.data["amp"].shape)
-        print("- Beam Geometry", ping.beam_geometry.data.shape)
-    if ping.raw_iq is not None:
-        print("- Raw IQ", ping.raw_iq.data["i"].shape)
 
-after_time = datetime.datetime.now()
-print("Time taken: %.4f s" % (after_time - before_time).total_seconds())
+def test_sonar_settings_time(dataset):
+    for p in dataset:
+        assert isinstance(p.sonar_settings.frame.time, datetime.datetime)
 
-print("After:")
-print_current_memory()
 
-for ping in dataset:
-    ping.minimize_memory()
+def test_dataset_memory_use(dataset):
+    init_memory = get_current_memory()
+    for p in dataset:
+        # Make some ping calls to load data into the cached properties
+        p.position_set
+        p.roll_pitch_heave_set
+        p.heading_set
+        p.beamformed.data
+        p.beam_geometry.data
+        p.raw_iq
+    
+    # Check whether accessing all of the data of the pings resulted
+    # in higher memeory use
+    cur_memory = get_current_memory()
+    assert cur_memory > init_memory
 
-print("Minimized:")
-print_current_memory()
-# %%
+    # Minimize the ping data
+    for p in dataset:
+        p.minimize_memory()
+
+    # Final check is whether the current memory is reduced
+    # by minimizing the ping datastructure
+    assert cur_memory > get_current_memory()

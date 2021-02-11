@@ -169,6 +169,8 @@ class Ping:
         self.ping_number : int = settings_record.header["ping_number"]
         self.__amp = None
         self.__phs = None
+        self.__ranges = None
+        self.__beams = None
         self.__decimated = False
         self.__range_normalized = False
         self.__beam_normalized = False
@@ -271,16 +273,28 @@ class Ping:
         long = self.position_set[0].header["long"] * 180/np.pi
         return geopy.Point(lat, long)
     
-    def __data_is_loaded(self):
+    def data_is_loaded(self):
         """ Checks if data has been loaded """
         if any([self.__amp is None, self.__phs is None]):
             return False
         else:
             return True
+    
+    def reset(self):
+        if self.data_is_loaded():
+            self.__amp = None
+            self.__phs = None
+            self.__ranges = None
+            self.__beams = None
+            self.__decimated = False
+            self.__range_normalized = False
+            self.__beam_normalized = False
+            self.__motion_corrected = False
+            self.__movement_corrected = False
 
     def load_data(self):
         """ Loads amplitude and phase data into memory """
-        if self.has_beamformed and not self.__data_is_loaded():
+        if self.has_beamformed and not self.data_is_loaded():
             self.__amp = self.beamformed.data["amp"]
             self.__phs = self.beamformed.data["phs"]
 
@@ -292,15 +306,17 @@ class Ping:
 
             self.__ranges = range_samples
             self.__beams = beam_angles
-            self.__dshape = (n_samples, n_beams)
 
         
-    def exclude_ranges(self, min_range_meter, max_range_meter):            
+    def exclude_ranges(self, min_range_meter=0, max_range_meter=2000):            
         """Excludes all data outside min_range_meter: max_range_meter"""
-        if not self.__data_is_loaded():
+        if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
 
-        min_idx = math.ceil(int(min_range_meter/self.__dr))
+        if min_range_meter > max_range_meter:
+            raise ValueError("Minimum range can't be larger than maximum range!")
+
+        min_idx = math.ceil(int(min_range_meter/self.__dr))+1
         max_idx = math.ceil(int(max_range_meter/self.__dr))
         self.__ranges = self.__ranges[min_idx:max_idx]
         self.__amp = self.__amp[min_idx:max_idx]
@@ -312,36 +328,39 @@ class Ping:
         if not self.__decimated:
             self.__amp = signal.decimate(self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
             self.__phs = signal.decimate(self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
-            self.__dshape = self.__amp.shape
-            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.__dshape[0])
+            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape)
             self.__decimated = True
 
     def resample(self, M):
         """Function used to resample data"""
         self.__amp = signal.resample(self.__amp.astype(float), num=M, axis=0)
         self.__phs = signal.resample(self.__phs.astype(float), num=M, axis=0)
-        self.__dshape = self.__amp.shape
-        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.__dshape[0])
+        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape)
 
     @property
     def range_samples(self):
-        if self.__data_is_loaded():
+        if self.data_is_loaded():
             return self.__ranges
 
     @property
     def beam_angles(self):
-        if self.__data_is_loaded():
+        if self.data_is_loaded():
             return self.__beams
 
     @property
     def amp(self):
-        if self.__data_is_loaded():
+        if self.data_is_loaded():
             return self.__amp
     
     @property
     def phs(self):
-        if self.__data_is_loaded():
+        if self.data_is_loaded():
             return self.__phs
+    
+    @property
+    def shape(self):
+        if self.data_is_loaded():
+            return self.__amp.shape
 
     def preprocess(self, min_range_meter=80, max_range_meter=1500, decimate=8, range_normalization_func = np.median, ):
         self.load_data()
@@ -362,7 +381,7 @@ class Ping:
             self.__beam_normalized = True
     
     def correct_motion(self, distance, bearing, correct=True):
-        if not self.__data_is_loaded():
+        if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
 
         roll = self.roll_pitch_heave_set[0].header["roll"]
@@ -407,7 +426,7 @@ class Ping:
             range_beam = _transform_position(range_beam, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle, correct=correct)
         
         if transformed:
-            self.__amp = f(range_beam[:, :, 0].flatten(), range_beam[:, :, 1].flatten(), grid=False).reshape(self.__dshape)
+            self.__amp = f(range_beam[:, :, 0].flatten(), range_beam[:, :, 1].flatten(), grid=False).reshape(self.shape)
         
 
 # %%
