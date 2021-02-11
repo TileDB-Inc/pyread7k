@@ -1,8 +1,6 @@
 from pyread7k import PingDataset, PingType, Ping
 import pytest
-import pandas as pd
 import numpy as np
-import os
 from dotenv import find_dotenv, load_dotenv
 from test import bf_filepath
 

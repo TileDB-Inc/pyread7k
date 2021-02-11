@@ -1,0 +1,7 @@
+pytest
+numpy
+scipy
+geopy
+matplotlib
+python-dotenv
+psutil

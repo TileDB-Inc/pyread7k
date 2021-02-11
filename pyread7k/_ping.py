@@ -273,14 +273,14 @@ class Ping:
         long = self.position_set[0].header["long"] * 180/np.pi
         return geopy.Point(lat, long)
     
-    def data_is_loaded(self):
+    def data_is_loaded(self) -> bool:
         """ Checks if data has been loaded """
         if any([self.__amp is None, self.__phs is None]):
             return False
         else:
             return True
     
-    def reset(self):
+    def reset(self) -> None:
         if self.data_is_loaded():
             self.__amp = None
             self.__phs = None
@@ -292,7 +292,7 @@ class Ping:
             self.__motion_corrected = False
             self.__movement_corrected = False
 
-    def load_data(self):
+    def load_data(self) -> None:
         """ Loads amplitude and phase data into memory """
         if self.has_beamformed and not self.data_is_loaded():
             self.__amp = self.beamformed.data["amp"]
@@ -308,7 +308,7 @@ class Ping:
             self.__beams = beam_angles
 
         
-    def exclude_ranges(self, min_range_meter=0, max_range_meter=2000):            
+    def exclude_ranges(self, min_range_meter: float = 0, max_range_meter: float = 2000) -> None:
         """Excludes all data outside min_range_meter: max_range_meter"""
         if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
@@ -319,41 +319,41 @@ class Ping:
         min_idx = math.ceil(int(min_range_meter/self.__dr))+1
         max_idx = math.ceil(int(max_range_meter/self.__dr))
         self.__ranges = self.__ranges[min_idx:max_idx]
-        self.__amp = self.__amp[min_idx:max_idx]
-        self.__phs = self.__phs[min_idx:max_idx]
+        self.__amp = self.__amp[min_idx:max_idx, :]
+        self.__phs = self.__phs[min_idx:max_idx, :]
 
 
-    def decimate(self, q=8):
+    def decimate(self, q: int = 8) -> None:
         """Function used to downsample data. Default is around a factor 8"""
         if not self.__decimated:
-            self.__amp = signal.decimate(self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
-            self.__phs = signal.decimate(self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True)
-            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape)
+            self.__amp = signal.decimate(self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0)
+            self.__phs = signal.decimate(self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0)
+            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape[0])
             self.__decimated = True
 
-    def resample(self, M):
+    def resample(self, M: int) -> None:
         """Function used to resample data"""
         self.__amp = signal.resample(self.__amp.astype(float), num=M, axis=0)
         self.__phs = signal.resample(self.__phs.astype(float), num=M, axis=0)
-        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape)
+        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape[0])
 
     @property
-    def range_samples(self):
+    def range_samples(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__ranges
 
     @property
-    def beam_angles(self):
+    def beam_angles(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__beams
 
     @property
-    def amp(self):
+    def amp(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__amp
     
     @property
-    def phs(self):
+    def phs(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__phs
     
@@ -380,33 +380,38 @@ class Ping:
             self.__amp = self.__amp / func(self.__amp, axis=0)
             self.__beam_normalized = True
     
-    def correct_motion(self, distance, bearing, correct=True):
+    def correct_motion(self, distance: float, bearing: float, correct: bool = True, **kwargs):
         if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
 
-        roll = self.roll_pitch_heave_set[0].header["roll"]
-        pitch = self.roll_pitch_heave_set[0].header["pitch"]
-        heave = self.roll_pitch_heave_set[0].header["heave"]
+        roll = kwargs.get("roll", self.roll_pitch_heave_set[0].header["roll"])
+        pitch = kwargs.get("pitch", self.roll_pitch_heave_set[0].header["pitch"])
+        heave = kwargs.get("heave", self.roll_pitch_heave_set[0].header["heave"])
 
-        yaw = self.heading_set[0].header["heading"] * np.pi/180
+        yaw = kwargs.get("yaw", self.heading_set[0].header["heading"] * np.pi/180)
 
         # TODO: get these from records
-        depth = 30
-        sonar_tilt = 0
-        sonar_angle = 0
-        
+        depth = kwargs.get("depth", 30)
+        sonar_tilt = kwargs.get("sonar_tilt", 0)
+        sonar_angle = kwargs.get("sonar_angle", 0) 
+
+        # We use the RectBivariateSpline as it is super fast
+        f = RectBivariateSpline(self.range_samples, self.beam_angles, self.amp)
+
+        transformed = False
+        # Since yaw transformation can be wholly applied in the polar space by just
+        # adding it to the beam angles, this will be done prior to any meshgrid.
         # Create a meshgrid of the beams and values
         # since we need to modify each and every range beam pair
         # separately
-        new_beams, new_ranges = np.meshgrid(self.beam_angles, self.range_samples)
+        yaw_correction = -1*yaw if correct else yaw
+        new_beams, new_ranges = np.meshgrid(self.beam_angles + yaw_correction, self.range_samples, indexing="xy")
         range_beam = np.dstack((new_ranges, new_beams)) 
         
-        f = RectBivariateSpline(self.range_samples, self.beam_angles, self.amp)
         
-        transformed = False
         if yaw != 0:
             transformed = True
-            range_beam = _transform_yaw(range_beam, yaw=yaw, correct=correct)
+        #     range_beam = _transform_yaw(range_beam, yaw=yaw, correct=correct)
         
         if any([roll != 0, sonar_tilt != 0]):
             range_beam = _transform_roll(range_beam, roll=roll, sonar_tilt=sonar_tilt, correct=correct)
