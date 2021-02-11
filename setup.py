@@ -24,7 +24,8 @@ setuptools.setup(
         "geopy",
         "matplotlib",
         "python-dotenv",
-        "psutil"
+        "psutil",
+        "xarray"
     ],
     python_requires='>=3.6',
 )

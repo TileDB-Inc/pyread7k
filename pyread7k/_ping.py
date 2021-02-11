@@ -22,12 +22,18 @@ from scipy import signal
 from scipy.interpolate import RectBivariateSpline
 from geopy import Point
 from geopy.distance import distance
+import xarray as xr
 from functools import partial
 
 from ._utils import read_file_catalog, read_file_header, read_records, get_record_offsets
 from . import _datarecord
 from ._datarecord import DataParts
 from ._motion_correction import _transform_pitch, _transform_position, _transform_roll, _transform_yaw
+
+class PingWeighting(Enum):
+    WEIGHTED_MEAN = 0
+    MEAN = 1
+    MEDIAN = 2
 
 
 class PingData(Enum):
@@ -304,7 +310,6 @@ class Ping:
             sonar_range = self.sonar_settings.header["range"]
             range_samples = np.linspace(0, sonar_range, n_samples)
             beam_angles = self.beam_geometry.data["horz_angle"]
-            self.__dr = range_samples[1] - range_samples[0]
 
             self.__ranges = range_samples
             self.__beams = beam_angles
@@ -318,8 +323,9 @@ class Ping:
         if min_range_meter > max_range_meter:
             raise ValueError("Minimum range can't be larger than maximum range!")
 
-        min_idx = math.ceil(int(min_range_meter/self.__dr))+1
-        max_idx = math.ceil(int(max_range_meter/self.__dr))
+        dr = self.range_samples[1] - self.range_samples[0]
+        min_idx = math.ceil(int(min_range_meter/dr))+1
+        max_idx = math.ceil(int(max_range_meter/dr))
         self.__ranges = self.__ranges[min_idx:max_idx]
         self.__amp = self.__amp[min_idx:max_idx, :]
         self.__phs = self.__phs[min_idx:max_idx, :]
@@ -375,13 +381,18 @@ class Ping:
         if self.data_is_loaded():
             return self.__amp.shape
 
-    def preprocess(self, min_range_meter=80, max_range_meter=1500, min_beam_index=0, max_beam_index=1024, decimate=8, range_normalization_func = np.median, ):
+
+    def preprocess(self, min_range_meter=80, max_range_meter=1500, min_beam_index=0, max_beam_index=1024, decimate=8, sample_length: Optional[float] = 0.2, range_normalization_func = np.median):
         self.reset()
         self.load_data()
-        self.exclude_ranges(min_range_meter=min_range_meter, max_range_meter=max_range_meter)
-        self.exclude_beams(min_beam_index=min_beam_index, max_beam_index=max_beam_index)
         if decimate != 0:
             self.decimate(q=decimate)
+        if sample_length != 0:
+            dr = self.range_samples[-1] - self.range_samples[0]
+            M = int(dr/sample_length)
+            self.resample(M)
+        self.exclude_ranges(min_range_meter=min_range_meter, max_range_meter=max_range_meter)
+        self.exclude_beams(min_beam_index=min_beam_index, max_beam_index=max_beam_index)
         self.range_normalize(range_normalization_func)
         
 
@@ -521,9 +532,17 @@ class PingDataset:
             min_beam_index: int = 0,
             max_beam_index: int = 1024,
             decimate: int = 8, 
+            sample_length: float = 0.2,
             range_normalization_func: Callable = np.median,
-            stacking_method: Callable = np.mean
-        ) -> np.ndarray:
+            stacking_method: PingWeighting = PingWeighting.MEAN,
+            weights: Optional[List[float]] = None
+        ) -> xr.DataArray:
+
+        if stacking_method == PingWeighting.WEIGHTED_MEAN:
+            if weights is None:
+                raise ValueError("Weights must be specified for weighted mean")
+            if len(weights) != len(ping_indices):
+                raise ValueError("For weighted mean stacking, the number of weights and the number of pings must be equal!")
 
         # Define empty stacking array
         # TODO: Take variable sonar range pings into account
@@ -536,6 +555,7 @@ class PingDataset:
             min_beam_index=min_beam_index,
             max_beam_index=max_beam_index,
             decimate=decimate,
+            sample_length=sample_length,
             range_normalization_func=range_normalization_func
         )
         # End ping shouldn't be translated
@@ -552,6 +572,7 @@ class PingDataset:
                 min_beam_index=min_beam_index,
                 max_beam_index=max_beam_index,
                 decimate=decimate,
+                sample_length=sample_length,
                 range_normalization_func=range_normalization_func
             )
             current_point = self.pings[idx].point
@@ -568,11 +589,29 @@ class PingDataset:
                 dyaw=dyaw
             )
 
-            motion_corrected_pings.append(self.pings[idx].amp)
+            # This is obviously not the most optimal way of computing a function of 
+            # 
+            # motion_corrected_pings.append(self.pings[idx].amp)
+            corrected_ping_xarray = xr.DataArray(self.pings[idx].amp, dims=("ranges", "beams"), coords={"ranges": self.pings[idx].range_samples, "beams": self.pings[idx].beam_angles})
+            motion_corrected_pings.append(corrected_ping_xarray)
 
         # Append the endping to the list as well
-        motion_corrected_pings.append(last_ping.amp)
-        return stacking_method(motion_corrected_pings, axis=0)
+        corrected_ping_xarray = xr.DataArray(last_ping.amp, dims=("ranges", "beams"), coords={"ranges": self.pings[idx].range_samples, "beams": self.pings[idx].beam_angles})
+        motion_corrected_pings.append(corrected_ping_xarray)
+        motion_corrected_pings = xr.concat(motion_corrected_pings, "pings")
+        # motion_corrected_pings.append(last_ping.amp)
+        # return stacking_method(motion_corrected_pings, axis=0)
+        if stacking_method == PingWeighting.WEIGHTED_MEAN:
+            weights = xr.DataArray(weights, dims=("pings"), name="weights")
+            motion_corrected_pings = motion_corrected_pings.weighted(weights)
+            motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
+        elif stacking_method == PingWeighting.MEDIAN:
+            motion_corrected_pings = motion_corrected_pings.median(dim="pings")
+        elif stacking_method == PingWeighting.MEAN:
+            motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
+        
+        return motion_corrected_pings
+
 
 
 class ConcatDataset:
