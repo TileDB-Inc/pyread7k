@@ -12,7 +12,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://rot-bitbucket/projects/CB7123/repos/pyread7k",
-    packages=setuptools.find_packages(where="src"),
+    packages=setuptools.find_packages(where="pyread7k"),
     package_dir={"": "pyread7k"},
     classifiers=[
         "Programming Language :: Python :: 3",
