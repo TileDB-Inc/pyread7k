@@ -11,7 +11,7 @@ Expected order of records for a ping:
 # %%
 from enum import Enum
 from functools import cached_property
-from typing import Optional, List
+from typing import Optional, List, Union
 import math
 
 import numpy as np
@@ -296,7 +296,7 @@ class PingDataset:
     def __len__(self) -> int:
         return len(self.pings)
 
-    def __getitem__(self, index: int) -> Ping:
+    def __getitem__(self, index: slice) -> Union[Ping, List[Ping]]:
         return self.pings[index]
 
 
