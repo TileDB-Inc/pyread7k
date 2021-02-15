@@ -11,24 +11,25 @@ Expected order of records for a ping:
 # TODO: Enable preprocessing functions in the ping class
 
 """
+import math
 # %%
 from enum import Enum
 from functools import cached_property
-from typing import Optional, List, Tuple, Callable
-import math
+from typing import Callable, List, Optional
 
 import numpy as np
-from scipy import signal
-from scipy.interpolate import RectBivariateSpline
+import xarray as xr
 from geopy import Point
 from geopy.distance import distance
-import xarray as xr
-from functools import partial
+from scipy import signal
+from scipy.interpolate import RectBivariateSpline
 
-from ._utils import read_file_catalog, read_file_header, read_records, get_record_offsets
 from . import _datarecord
 from ._datarecord import DataParts
-from ._motion_correction import _transform_pitch, _transform_position, _transform_roll, _transform_yaw
+from ._motion_correction import _transform_position, _transform_roll
+from ._utils import (get_record_offsets, read_file_catalog, read_file_header,
+                     read_records)
+
 
 class PingWeighting(Enum):
     WEIGHTED_MEAN = 0
@@ -40,10 +41,12 @@ class PingData(Enum):
     AMPLITUDE = 0
     PHASE = 1
 
+
 class LazyMap(dict):
     """
     An advanced defaultdict, where the initializer may depend on the key.
     """
+
     def __init__(self, initializer, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.initializer = initializer
@@ -58,12 +61,12 @@ class Manager7k:
     """
     Internal class for Pings to share access to a file.
     """
+
     def __init__(self, fhandle, file_catalog):
         self.fhandle = fhandle
         self.file_catalog = file_catalog
         self._offsets_for_type = LazyMap(
-            initializer=lambda key: get_record_offsets(
-                key, self.file_catalog)
+            initializer=lambda key: get_record_offsets(key, self.file_catalog)
         )
 
     def get_next_record(self, record_type, offset_start, offset_end):
@@ -144,7 +147,7 @@ class Manager7k:
         index = initial_index - 1
         while searching_backward:
             if index == -1:
-                break # Reached start of file
+                break  # Reached start of file
 
             next_record = self.read_record(record_type, record_offsets[index])
             if next_record.frame.time < ping_start:
@@ -161,6 +164,7 @@ class Manager7k:
 
         return backward_records + forward_records
 
+
 class Ping:
     """
     A sound ping from a sonar, with associated data about settings and conditions.
@@ -169,12 +173,18 @@ class Ping:
 
     minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
 
-    def __init__(self, settings_record : DataParts, settings_offset : int,
-                 next_record, next_offset : int, manager : Manager7k):
+    def __init__(
+        self,
+        settings_record: DataParts,
+        settings_offset: int,
+        next_record,
+        next_offset: int,
+        manager: Manager7k,
+    ):
 
         # This is the only record always in-memory, as it defines the ping.
-        self.sonar_settings : DataParts = settings_record
-        self.ping_number : int = settings_record.header["ping_number"]
+        self.sonar_settings: DataParts = settings_record
+        self.ping_number: int = settings_record.header["ping_number"]
         self.__amp = None
         self.__phs = None
         self.__ranges = None
@@ -186,14 +196,18 @@ class Ping:
         self.__movement_corrected = False
 
         self._manager = manager
-        self._own_offset = settings_offset # This ping's start offset
-        self._next_offset = next_offset # Next ping's start offset, meaning this ping has ended
-        self.next_ping_start = (next_record.frame.time
-            if next_record is not None else None)
+        self._own_offset = settings_offset  # This ping's start offset
+        self._next_offset = (
+            next_offset  # Next ping's start offset, meaning this ping has ended
+        )
+        self.next_ping_start = (
+            next_record.frame.time if next_record is not None else None
+        )
 
         self._offset_map = LazyMap(
             initializer=lambda key: self._manager.get_next_offset(
-                key, self._own_offset, self._next_offset)
+                key, self._own_offset, self._next_offset
+            )
         )
 
     def __str__(self) -> str:
@@ -208,7 +222,7 @@ class Ping:
             if key in self.__dict__:
                 del self.__dict__[key]
 
-    def _get_single_associated_record(self, record_type : int):
+    def _get_single_associated_record(self, record_type: int):
         """
         Read a record associated with the ping. The requested record must:
         - Be the only of its type for the ping
@@ -228,22 +242,22 @@ class Ping:
     def position_set(self) -> List[DataParts]:
         """ Returns all 1003 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1003, self.sonar_settings.frame.time, self.next_ping_start,
-            self._own_offset)
+            1003, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
+        )
 
     @cached_property
     def roll_pitch_heave_set(self) -> List[DataParts]:
         """ Returns all 1012 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1012, self.sonar_settings.frame.time, self.next_ping_start,
-            self._own_offset)
+            1012, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
+        )
 
     @cached_property
     def heading_set(self) -> List[DataParts]:
         """ Returns all 1013 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1013, self.sonar_settings.frame.time, self.next_ping_start,
-            self._own_offset)
+            1013, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
+        )
 
     @cached_property
     def beam_geometry(self) -> Optional[DataParts]:
@@ -277,17 +291,17 @@ class Ping:
 
     @cached_property
     def point(self):
-        lat = self.position_set[0].header["lat"] * 180/np.pi
-        long = self.position_set[0].header["long"] * 180/np.pi
+        lat = self.position_set[0].header["lat"] * 180 / np.pi
+        long = self.position_set[0].header["long"] * 180 / np.pi
         return Point(lat, long)
-    
+
     def data_is_loaded(self) -> bool:
         """ Checks if data has been loaded """
         if any([self.__amp is None, self.__phs is None]):
             return False
         else:
             return True
-    
+
     def reset(self) -> None:
         if self.data_is_loaded():
             self.__amp = None
@@ -312,10 +326,12 @@ class Ping:
             beam_angles = self.beam_geometry.data["horz_angle"]
 
             self.__ranges = range_samples
+            # self.__beams = (beam_angles % (2*np.pi) - np.pi/2)
             self.__beams = beam_angles
 
-        
-    def exclude_ranges(self, min_range_meter: float = 0, max_range_meter: float = 2000) -> None:
+    def exclude_ranges(
+        self, min_range_meter: float = 0, max_range_meter: float = 2000
+    ) -> None:
         """Excludes all data outside min_range_meter: max_range_meter"""
         if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
@@ -324,30 +340,40 @@ class Ping:
             raise ValueError("Minimum range can't be larger than maximum range!")
 
         dr = self.range_samples[1] - self.range_samples[0]
-        min_idx = math.ceil(int(min_range_meter/dr))+1
-        max_idx = math.ceil(int(max_range_meter/dr))
+        min_idx = math.ceil(int(min_range_meter / dr)) + 1
+        max_idx = math.ceil(int(max_range_meter / dr))
         self.__ranges = self.__ranges[min_idx:max_idx]
         self.__amp = self.__amp[min_idx:max_idx, :]
         self.__phs = self.__phs[min_idx:max_idx, :]
 
-    def exclude_beams(self, min_beam_index: int = 0, max_beam_index: int = 1024) -> None:
+    def exclude_beams(
+        self, min_beam_index: int = 0, max_beam_index: int = 1024
+    ) -> None:
         """Excludes all data outside min_beam_idx: max_beam_idx"""
         if not self.data_is_loaded():
             raise AttributeError("Data has not been loaded! Call load_data() first.")
 
         if min_beam_index > max_beam_index:
-            raise ValueError("Minimum beam index can't be larger than maximum beam index!")
+            raise ValueError(
+                "Minimum beam index can't be larger than maximum beam index!"
+            )
 
-        self.__beams = self.__beams[min_beam_index: max_beam_index+1]
-        self.__amp = self.__amp[:, min_beam_index: max_beam_index+1]
-        self.__phs = self.__phs[:, min_beam_index: max_beam_index+1]
+        self.__beams = self.__beams[min_beam_index : max_beam_index + 1]
+        self.__amp = self.__amp[:, min_beam_index : max_beam_index + 1]
+        self.__phs = self.__phs[:, min_beam_index : max_beam_index + 1]
 
     def decimate(self, q: int = 8) -> None:
         """Function used to downsample data. Default is around a factor 8"""
         if not self.__decimated:
-            self.__amp = signal.decimate(self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0)
-            self.__phs = signal.decimate(self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0)
-            self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape[0])
+            self.__amp = signal.decimate(
+                self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0
+            )
+            self.__phs = signal.decimate(
+                self.__phs.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0
+            )
+            self.__ranges = np.linspace(
+                self.__ranges[0], self.__ranges[-1], self.shape[0]
+            )
             self.__decimated = True
 
     def resample(self, M: int) -> None:
@@ -370,31 +396,40 @@ class Ping:
     def amp(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__amp
-    
+
     @property
     def phs(self) -> Optional[np.ndarray]:
         if self.data_is_loaded():
             return self.__phs
-    
+
     @property
     def shape(self):
         if self.data_is_loaded():
             return self.__amp.shape
 
-
-    def preprocess(self, min_range_meter=80, max_range_meter=1500, min_beam_index=0, max_beam_index=1024, decimate=8, sample_length: Optional[float] = 0.2, range_normalization_func = np.median):
+    def preprocess(
+        self,
+        min_range_meter=80,
+        max_range_meter=1500,
+        min_beam_index=0,
+        max_beam_index=1024,
+        decimate=8,
+        sample_length: Optional[float] = 0.2,
+        range_normalization_func=np.median,
+    ):
         self.reset()
         self.load_data()
         if decimate != 0:
             self.decimate(q=decimate)
         if sample_length != 0:
             dr = self.range_samples[-1] - self.range_samples[0]
-            M = int(dr/sample_length)
+            M = int(dr / sample_length)
             self.resample(M)
-        self.exclude_ranges(min_range_meter=min_range_meter, max_range_meter=max_range_meter)
+        self.exclude_ranges(
+            min_range_meter=min_range_meter, max_range_meter=max_range_meter
+        )
         self.exclude_beams(min_beam_index=min_beam_index, max_beam_index=max_beam_index)
         self.range_normalize(range_normalization_func)
-        
 
     def range_normalize(self, func: Callable = np.median):
         if not self.__range_normalized:
@@ -405,8 +440,15 @@ class Ping:
         if not self.__beam_normalized:
             self.__amp = self.__amp / func(self.__amp, axis=0)
             self.__beam_normalized = True
-    
-    def correct_motion(self, distance: float, bearing: float, dyaw: float = 0, correct: bool = True, **kwargs):
+
+    def correct_motion(
+        self,
+        distance: float,
+        bearing: float,
+        dyaw: float = 0,
+        correct: bool = True,
+        **kwargs
+    ):
         """Correct amplitude data of ping by applying yaw, roll, and movement corrections
 
         The roll taken from the roll of the vessel at ping time. The yaw and position corrections
@@ -419,13 +461,16 @@ class Ping:
             raise AttributeError("Data has not been loaded! Call load_data() first.")
 
         roll = kwargs.get("roll", self.roll_pitch_heave_set[0].header["roll"])
+        # return mod(a+1.5f*b,b)-((b)/(2));
+        # roll = ((roll + 3*np.pi) % (2*np.pi)) - np.pi
         pitch = kwargs.get("pitch", self.roll_pitch_heave_set[0].header["pitch"])
         heave = kwargs.get("heave", self.roll_pitch_heave_set[0].header["heave"])
 
         # TODO: get these from records
         depth = kwargs.get("depth", 30)
         sonar_tilt = kwargs.get("sonar_tilt", 0)
-        sonar_angle = kwargs.get("sonar_angle", 0) 
+        sonar_angle = kwargs.get("sonar_angle", 0)
+        disp = kwargs.get("disp", 0)
 
         # We use the RectBivariateSpline as it is super fast
         f = RectBivariateSpline(self.range_samples, self.beam_angles, self.amp)
@@ -436,47 +481,65 @@ class Ping:
         # Create a meshgrid of the beams and values
         # since we need to modify each and every range beam pair
         # separately
-        yaw_correction = -1*dyaw if correct else dyaw
-        new_beams, new_ranges = np.meshgrid(self.beam_angles + yaw_correction, self.range_samples, indexing="xy")
-        range_beam = np.dstack((new_ranges, new_beams)) 
+        yaw_correction = -1 * dyaw if correct else dyaw
+        new_beams, new_ranges = np.meshgrid(
+            (self.beam_angles + yaw_correction), self.range_samples, indexing="xy"
+        )
+        range_beam = np.dstack((new_ranges, new_beams))
 
         if dyaw != 0:
             transformed = True
         #     range_beam = _transform_yaw(range_beam, yaw=yaw, correct=correct)
-        
+
         if any([roll != 0, sonar_tilt != 0]):
             transformed = True
-            range_beam = _transform_roll(range_beam, roll=roll, sonar_tilt=sonar_tilt, correct=correct)
+            range_beam = _transform_roll(
+                range_beam, roll=roll, disp=disp, correct=correct
+            )
 
         if transformed:
             self.__motion_corrected = True
-        
+
         # TODO: Implement pitch when sonar rotation is an option
-        #if pitch != 0:   
+        # if pitch != 0:
         #    print("Correcting for Pitch")
         #    transformed = True
         #    range_beam = transform_pitch(range_beam, pitch=pitch, depth=depth, heave=heave, reverse=True)
 
-
         # For the range and beam values that are outside of the original range and beam interval,
         # set those values to zero
-        range_cond = (range_beam[:, :, 0] > self.range_samples[0]) & (range_beam[:, :, 0] < self.range_samples[-1])
-        beam_cond = (range_beam[:, :, 1] > self.beam_angles[0]) & (range_beam[:, :, 1] < self.beam_angles[-1])
+        range_cond = (range_beam[:, :, 0] > self.range_samples[0]) & (
+            range_beam[:, :, 0] < self.range_samples[-1]
+        )
+        beam_cond = (range_beam[:, :, 1] > self.beam_angles[0]) & (
+            range_beam[:, :, 1] < self.beam_angles[-1]
+        )
         cond = ~(range_cond & beam_cond)
-        
+
         if all([distance != 0, bearing != 0]):
             transformed = True
             self.__movement_corrected = True
-            range_beam = _transform_position(range_beam, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle, correct=correct)
-        
+            range_beam = _transform_position(
+                range_beam,
+                dist=distance,
+                movement_angle=bearing,
+                sonar_angle=sonar_angle,
+                correct=correct,
+            )
+
         if transformed:
-            self.__amp = f(range_beam[:, :, 0].flatten(), range_beam[:, :, 1].flatten(), grid=False).reshape(self.shape)
+            # We use the RectBivariateSpline as it is super fast
+            # f = RectBivariateSpline(self.range_samples, self.beam_angles, self.amp)
+            self.__amp = f(
+                range_beam[:, :, 0].flatten(), range_beam[:, :, 1].flatten(), grid=False
+            ).reshape(self.shape)
             self.__amp[cond] = np.nan
-        
+
 
 # %%
 class PingType(Enum):
     """ Kinds of pings based on what data they have available """
+
     BEAMFORMED = 1
     IQ = 2
     ANY = 3
@@ -488,7 +551,8 @@ class PingDataset:
 
     Provides random access into pings in a file with minimal overhead.
     """
-    def __init__(self, filename, include : PingType=PingType.ANY):
+
+    def __init__(self, filename, include: PingType = PingType.ANY):
         """
         if include argument is not ANY, pings will be filtered.
         """
@@ -505,9 +569,16 @@ class PingDataset:
         settings_offsets = get_record_offsets(7000, file_catalog)
         settings_and_offsets = list(zip(settings_records, settings_offsets))
 
-        pings = [Ping(rec, offset, next_rec, next_off, manager) for (rec, offset), (next_rec, next_off)
-                          in zip(settings_and_offsets,
-                                 settings_and_offsets[1:] + [(None, math.inf),])]
+        pings = [
+            Ping(rec, offset, next_rec, next_off, manager)
+            for (rec, offset), (next_rec, next_off) in zip(
+                settings_and_offsets,
+                settings_and_offsets[1:]
+                + [
+                    (None, math.inf),
+                ],
+            )
+        ]
 
         if include == PingType.BEAMFORMED:
             self.pings = [p for p in pings if p.has_beamformed]
@@ -516,33 +587,35 @@ class PingDataset:
         elif include == PingType.ANY:
             self.pings = pings
         else:
-            raise NotImplementedError("Encountered unknown PingType: %s"  % str(include))
+            raise NotImplementedError("Encountered unknown PingType: %s" % str(include))
 
     def __len__(self) -> int:
         return len(self.pings)
 
     def __getitem__(self, index: int) -> Ping:
         return self.pings[index]
-    
+
     def stack(
-            self, 
-            ping_indices: List[int], 
-            min_range_meter: float = 80, 
-            max_range_meter: float = 1500, 
-            min_beam_index: int = 0,
-            max_beam_index: int = 1024,
-            decimate: int = 8, 
-            sample_length: float = 0.2,
-            range_normalization_func: Callable = np.median,
-            stacking_method: PingWeighting = PingWeighting.MEAN,
-            weights: Optional[List[float]] = None
-        ) -> xr.DataArray:
+        self,
+        ping_indices: List[int],
+        min_range_meter: float = 80,
+        max_range_meter: float = 1500,
+        min_beam_index: int = 0,
+        max_beam_index: int = 1024,
+        decimate: int = 8,
+        sample_length: float = 0.2,
+        range_normalization_func: Callable = np.median,
+        stacking_method: PingWeighting = PingWeighting.MEAN,
+        weights: Optional[List[float]] = None,
+    ) -> xr.DataArray:
 
         if stacking_method == PingWeighting.WEIGHTED_MEAN:
             if weights is None:
                 raise ValueError("Weights must be specified for weighted mean")
             if len(weights) != len(ping_indices):
-                raise ValueError("For weighted mean stacking, the number of weights and the number of pings must be equal!")
+                raise ValueError(
+                    "For weighted mean stacking, the number of weights and the number of pings must be equal!"
+                )
 
         # Define empty stacking array
         # TODO: Take variable sonar range pings into account
@@ -556,7 +629,7 @@ class PingDataset:
             max_beam_index=max_beam_index,
             decimate=decimate,
             sample_length=sample_length,
-            range_normalization_func=range_normalization_func
+            range_normalization_func=range_normalization_func,
         )
         # End ping shouldn't be translated
         last_ping.correct_motion(distance=0, bearing=0)
@@ -573,51 +646,63 @@ class PingDataset:
                 max_beam_index=max_beam_index,
                 decimate=decimate,
                 sample_length=sample_length,
-                range_normalization_func=range_normalization_func
+                range_normalization_func=range_normalization_func,
             )
             current_point = self.pings[idx].point
             distance_to_endpoint = distance(current_point, last_ping.point).meters
             bearing_between_points = bearing(current_point, last_ping.point)
             dyaw = (
-                self.pings[ping_indices[-1]].heading_set[0].header["heading"] * np.pi/180
-                - self.pings[idx].heading_set[0].header["heading"] * np.pi/180
+                self.pings[ping_indices[-1]].heading_set[0].header["heading"]
+                - self.pings[idx].heading_set[0].header["heading"]
             )
 
             self.pings[idx].correct_motion(
-                distance=distance_to_endpoint,
-                bearing=bearing_between_points,
-                dyaw=dyaw
+                distance=distance_to_endpoint, bearing=bearing_between_points, dyaw=dyaw
             )
 
-            # This is obviously not the most optimal way of computing a function of 
-            # 
+            # This is obviously not the most optimal way of computing a function of
+            #
             # motion_corrected_pings.append(self.pings[idx].amp)
-            corrected_ping_xarray = xr.DataArray(self.pings[idx].amp, dims=("ranges", "beams"), coords={"ranges": self.pings[idx].range_samples, "beams": self.pings[idx].beam_angles})
+            corrected_ping_xarray = xr.DataArray(
+                self.pings[idx].amp,
+                dims=("ranges", "beams"),
+                coords={
+                    "ranges": self.pings[idx].range_samples,
+                    "beams": self.pings[idx].beam_angles,
+                },
+            )
             motion_corrected_pings.append(corrected_ping_xarray)
 
         # Append the endping to the list as well
-        corrected_ping_xarray = xr.DataArray(last_ping.amp, dims=("ranges", "beams"), coords={"ranges": self.pings[idx].range_samples, "beams": self.pings[idx].beam_angles})
+        corrected_ping_xarray = xr.DataArray(
+            last_ping.amp,
+            dims=("ranges", "beams"),
+            coords={
+                "ranges": self.pings[idx].range_samples,
+                "beams": self.pings[idx].beam_angles,
+            },
+        )
         motion_corrected_pings.append(corrected_ping_xarray)
         motion_corrected_pings = xr.concat(motion_corrected_pings, "pings")
         # motion_corrected_pings.append(last_ping.amp)
         # return stacking_method(motion_corrected_pings, axis=0)
         if stacking_method == PingWeighting.WEIGHTED_MEAN:
-            weights = xr.DataArray(weights, dims=("pings"), name="weights")
+            weights = xr.DataArray(weights, dims=("pings"), name="weights")  # type: ignore
             motion_corrected_pings = motion_corrected_pings.weighted(weights)
             motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
         elif stacking_method == PingWeighting.MEDIAN:
             motion_corrected_pings = motion_corrected_pings.median(dim="pings")
         elif stacking_method == PingWeighting.MEAN:
             motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
-        
-        return motion_corrected_pings
 
+        return motion_corrected_pings
 
 
 class ConcatDataset:
     """
     Reimplementation of Pytorch ConcatDataset to avoid dependency
     """
+
     def __init__(self, datasets):
 
         self.cum_lengths = np.cumsum([len(d) for d in datasets])
@@ -639,7 +724,6 @@ class ConcatDataset:
         return self.datasets[dataset_index][sample_index]
 
 
-
 def bearing(pointA, pointB):
     lat1 = math.radians(pointA[0])
     lat2 = math.radians(pointB[0])
@@ -647,7 +731,8 @@ def bearing(pointA, pointB):
     dL = math.radians(pointB[1] - pointA[1])
 
     x = math.sin(dL) * math.cos(lat2)
-    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1)
-            * math.cos(lat2) * math.cos(dL))
+    y = math.cos(lat1) * math.sin(lat2) - (
+        math.sin(lat1) * math.cos(lat2) * math.cos(dL)
+    )
 
     return math.radians(math.atan2(x, y))

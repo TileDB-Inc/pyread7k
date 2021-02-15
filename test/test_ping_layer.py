@@ -1,4 +1,4 @@
-# %% 
+# %%
 # import itertools
 # import math
 import os
@@ -17,7 +17,7 @@ def get_current_memory():
     pid = os.getpid()
     own_process = psutil.Process(pid)
     return own_process.memory_info()[0] / (1024**2)
-    
+
 
 @pytest.fixture
 def dataset():
@@ -43,7 +43,7 @@ def test_dataset_memory_use(dataset):
         p.beamformed.data
         p.beam_geometry.data
         p.raw_iq
-    
+
     # Check whether accessing all of the data of the pings resulted
     # in higher memeory use
     cur_memory = get_current_memory()
