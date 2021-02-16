@@ -18,5 +18,14 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
     ],
+    install_requires=[
+        "pytest",
+        "numpy",
+        "scipy",
+        "matplotlib",
+        "python-dotenv",
+        "psutil",
+        "xarray"
+    ],
     python_requires='>=3.6',
 )
