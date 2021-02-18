@@ -138,8 +138,6 @@ class DataBlock(metaclass=abc.ABCMeta):
         return results
 
 
-
-
 # Using only primitive fields, for parsing.
 DRF_PRIMITIVE_FIELDS = (
     "protocol_version",

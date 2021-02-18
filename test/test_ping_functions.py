@@ -6,9 +6,11 @@ from test import bf_filepath
 
 load_dotenv(find_dotenv())
 
+
 @pytest.fixture
 def pingdataset() -> PingDataset:
     return PingDataset(bf_filepath, include=PingType.BEAMFORMED)
+
 
 @pytest.fixture
 def ping(pingdataset) -> Ping:
@@ -18,12 +20,14 @@ def ping(pingdataset) -> Ping:
 def test_read_s7kfile(pingdataset: PingDataset):
     assert isinstance(pingdataset, PingDataset)
 
+
 def test_get_data(ping: Ping):
     assert ping.data_is_loaded() == False
     ping.load_data()
     assert ping.data_is_loaded() == True
     assert isinstance(ping.amp, np.ndarray)
     assert isinstance(ping.phs, np.ndarray)
+
 
 def test_range_exclusion(ping: Ping):
     # Min exclusion

@@ -12,16 +12,18 @@ from pyread7k import PingDataset, PingType
 
 # %%
 
+
 def get_current_memory():
     """ Prints current memory of active process """
     pid = os.getpid()
     own_process = psutil.Process(pid)
-    return own_process.memory_info()[0] / (1024**2)
+    return own_process.memory_info()[0] / (1024 ** 2)
 
 
 @pytest.fixture
 def dataset():
     return PingDataset(bf_filepath, include=PingType.BEAMFORMED)
+
 
 @pytest.fixture
 def ping(dataset):
