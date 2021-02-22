@@ -17,7 +17,7 @@ import math
 from enum import Enum
 from functools import cached_property
 from typing import Callable, List, Optional
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 import numpy as np
 import xarray as xr
@@ -25,6 +25,7 @@ from geopy import Point
 from geopy.distance import distance
 from scipy import signal
 from scipy.interpolate import interp2d, griddata
+from scipy.spatial import ConvexHull, Delaunay
 
 from . import _datarecord
 from ._datarecord import DataParts
@@ -323,10 +324,10 @@ class Ping:
     def motion_for_sample(self, sample):
         """ Find the most appropriate motion data for a sample based on time """
         time = self.sonar_settings.frame.time + \
-            timedelta(seconds=sample / ping.sonar_settings.header["sample_rate"])
-        rph_index = np.searchsorted([m.frame.time for m in ping.roll_pitch_heave_set], time)
-        heading_index = np.searchsorted([m.frame.time for m in ping.heading_set], time)
-        return ping.roll_pitch_heave_set[rph_index], ping.heading_set[heading_index]
+            timedelta(seconds=sample / self.sonar_settings.header["sample_rate"])
+        rph_index = np.searchsorted([m.frame.time for m in self.roll_pitch_heave_set], time)
+        heading_index = np.searchsorted([m.frame.time for m in self.heading_set], time)
+        return self.roll_pitch_heave_set[rph_index], self.heading_set[heading_index]
 
     def __sample_dist(self, s):
         return s / self.sonar_settings.header["sample_rate"] * self.sonar_settings.header["sound_velocity"] / 2
@@ -498,12 +499,12 @@ class Ping:
         # vals[np.isnan(vals)] = 0
 
 
-        transformed = False
         new_beams, new_ranges = np.meshgrid(
             self.beam_angles, self.range_samples, indexing="xy"
         )
+
         range_bearing = np.dstack((new_ranges, new_beams)).reshape(-1, 2)
-        grid_xy = to_cartesian(range_bearing.copy(), depth=0)
+        grid_xy = to_cartesian(range_bearing.copy(), depth=0, disp=disp)
         points = to_cartesian_transformed(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
         # points = rotation_transform(grid_xy.copy(), roll=roll, yaw=dyaw)
         points = translate_position(points, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
@@ -511,12 +512,15 @@ class Ping:
         grid_x = grid_xy[:, 0].reshape(new_beams.shape)
         grid_y = grid_xy[:, 1].reshape(new_beams.shape)
 
-        # import matplotlib.pyplot as plt
-        # plt.scatter(points[:, 0].flatten(), points[:, 1].flatten(), color="black", s=0.05)
-        # plt.show()
-
         nans = (np.isnan(self.amp.flatten()) | np.isnan(points[:, 0]) | np.isnan(points[:, 1]))
-        self.__amp = griddata(points[~nans], self.amp.flatten()[~nans], (grid_x, grid_y), method="cubic")
+        self.__amp = griddata(points[~nans], self.amp.flatten()[~nans], (grid_x, grid_y), method="linear")
+        # self.__amp = griddata(points, self.amp.flatten(), (grid_x, grid_y), method="nearest")
+        ## TODO: When the nearest method has been fixed, change the interpolation to use this "nearest" and then
+        #        use the following four lines to remove points outside the convex hull
+        # hull = Delaunay(points[~nans])
+        # inside_bounds = np.zeros(self.amp.shape)
+        # inside_bounds = (hull.find_simplex(grid_xy) >= 0).reshape(self.amp.shape)
+        # self.__amp[~inside_bounds] = np.nan
 
 
 
@@ -641,7 +645,7 @@ class PingDataset:
             )
 
             self.pings[idx].correct_motion(
-                distance=distance_to_endpoint,
+                distance=-distance_to_endpoint,
                 bearing=bearing_between_points,
                 dyaw=dyaw,
             )
@@ -657,9 +661,6 @@ class PingDataset:
                     "bearings": self.pings[idx].beam_angles,
                 },
             )
-            print(self.pings[idx].amp.shape)
-            print(self.pings[idx].range_samples.shape)
-            print(self.pings[idx].beam_angles.shape)
             motion_corrected_pings.append(corrected_ping_xarray)
 
         # Append the endping to the list as well
@@ -673,7 +674,6 @@ class PingDataset:
         )
         motion_corrected_pings.append(corrected_ping_xarray)
         motion_corrected_pings = xr.concat(motion_corrected_pings, "pings")
-        print(motion_corrected_pings)
         # motion_corrected_pings.append(last_ping.amp)
         # return stacking_method(motion_corrected_pings, axis=0)
         if stacking_method == PingWeighting.WEIGHTED_MEAN:
