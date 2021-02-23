@@ -25,7 +25,7 @@ from geopy import Point
 from geopy.distance import distance
 from scipy import signal
 from scipy.interpolate import interp2d, griddata
-from scipy.spatial import ConvexHull, Delaunay
+
 
 from . import _datarecord
 from ._datarecord import DataParts
@@ -36,6 +36,9 @@ from ._utils import (
     read_file_header,
     read_records,
 )
+
+class PingDataNotProcessed(Exception):
+    pass
 
 
 class PingWeighting(Enum):
@@ -383,9 +386,12 @@ class Ping:
     def decimate(self, q: int = 8) -> None:
         """Function used to downsample data. Default is around a factor 8"""
         if not self.__decimated:
+            # The amplitude can be decimated as is
             self.__amp = signal.decimate(
                 self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0
             )
+            # The phase however needs to be decomposed into sine and cosine and recomposed
+            # after the decimation
             phs_sin = signal.decimate(
                 np.sin(self.__phs), q=q, n=8, ftype="fir", zero_phase=True, axis=0
             )
@@ -401,7 +407,9 @@ class Ping:
     def resample(self, M: int) -> None:
         """Function used to resample data"""
         self.__amp = signal.resample(self.__amp.astype(float), num=M, axis=0)
-        self.__phs = signal.resample(self.__phs.astype(float), num=M, axis=0)
+        phs_sin = signal.resample(np.sin(self.__phs).astype(float), num=M, axis=0)
+        phs_cos = signal.resample(np.cos(self.__phs).astype(float), num=M, axis=0)
+        self.__phs = np.arctan2(phs_sin, phs_cos)
         self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape[0])
 
     @property
@@ -425,6 +433,11 @@ class Ping:
             return self.__phs
 
     @property
+    def phs_diffs(self) -> Optional[np.ndarray]:
+        if self.data_is_loaded():
+            return np.diff(np.unwrap(self.__phs, discont=np.pi, axis=0), axis=0)
+
+    @property
     def shape(self):
         if self.data_is_loaded():
             return self.__amp.shape
@@ -436,14 +449,14 @@ class Ping:
         min_beam_index=0,
         max_beam_index=1024,
         decimate=8,
-        sample_length: Optional[float] = 0.2,
+        sample_length: Optional[float] = None,
         range_normalization_func=np.median,
     ):
         self.reset()
         self.load_data()
         if decimate != 0:
             self.decimate(q=decimate)
-        if sample_length != 0:
+        if sample_length is not None:
             dr = self.range_samples[-1] - self.range_samples[0]
             M = int(dr / sample_length)
             self.resample(M)
