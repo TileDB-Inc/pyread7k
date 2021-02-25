@@ -25,6 +25,7 @@ from geopy import Point
 from geopy.distance import distance
 from scipy import signal
 from scipy.interpolate import interp2d, griddata
+import gc
 
 
 from . import _datarecord
@@ -181,7 +182,7 @@ class Ping:
     Properties of the ping are loaded efficiently on-demand.
     """
 
-    minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
+    minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq", "__amp", "__phs"]
 
     def __init__(
         self,
@@ -231,6 +232,10 @@ class Ping:
         for key in self.minimizable_properties:
             if key in self.__dict__:
                 del self.__dict__[key]
+        # We need to force the garbage collector to remove the
+        # deleted attributes from memory or else it'll keep it
+        # bound to the object
+        gc.collect()
 
     def _get_single_associated_record(self, record_type: int):
         """
