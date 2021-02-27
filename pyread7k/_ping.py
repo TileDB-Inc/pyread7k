@@ -24,13 +24,16 @@ import xarray as xr
 from geopy import Point
 from geopy.distance import distance
 from scipy import signal
-from scipy.interpolate import interp2d, griddata
+from scipy.interpolate import interp2d, griddata, NearestNDInterpolator, RectBivariateSpline
+from scipy.spatial import ConvexHull
 import gc
-
+# import cuspatial
+# import cudf
+# from numba import cuda
 
 from . import _datarecord
 from ._datarecord import DataParts
-from ._motion_correction import translate_position, to_cartesian, rotation_transform, to_cartesian_transformed
+from . import _motion_correction as motion
 from ._utils import (
     get_record_offsets,
     read_file_catalog,
@@ -522,23 +525,29 @@ class Ping:
         )
 
         range_bearing = np.dstack((new_ranges, new_beams)).reshape(-1, 2)
-        grid_xy = to_cartesian(range_bearing.copy(), depth=0, disp=disp)
-        points = to_cartesian_transformed(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
-        # points = rotation_transform(grid_xy.copy(), roll=roll, yaw=dyaw)
-        points = translate_position(points, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
+        grid_xy, _ = motion.to_cartesian(range_bearing.copy(), depth=depth, disp=disp)
+        # grid_xy = motion.to_cartesian_v2(range_bearing.copy())
+        shp = new_beams.shape
+        transforming = False
+        if any([np.abs(roll) > 1e-3, np.abs(dyaw) > 1e-3]):
+            points, points_cond = motion.to_cartesian_transformed(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
+            # points = motion.to_cartesian_transformed_v2(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
+            if distance != 0:
+                points = motion.translate_position(points, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
 
-        grid_x = grid_xy[:, 0].reshape(new_beams.shape)
-        grid_y = grid_xy[:, 1].reshape(new_beams.shape)
+            transforming = True
+        elif distance != 0:
+            points = motion.translate_position(grid_xy, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
+            points_cond = np.ones_like(new_beams)
+            transforming = True
 
-        nans = (np.isnan(self.amp.flatten()) | np.isnan(points[:, 0]) | np.isnan(points[:, 1]))
-        self.__amp = griddata(points[~nans], self.amp.flatten()[~nans], (grid_x, grid_y), method="linear")
-        # self.__amp = griddata(points, self.amp.flatten(), (grid_x, grid_y), method="nearest")
-        ## TODO: When the nearest method has been fixed, change the interpolation to use this "nearest" and then
-        #        use the following four lines to remove points outside the convex hull
-        # hull = Delaunay(points[~nans])
-        # inside_bounds = np.zeros(self.amp.shape)
-        # inside_bounds = (hull.find_simplex(grid_xy) >= 0).reshape(self.amp.shape)
-        # self.__amp[~inside_bounds] = np.nan
+        if transforming:
+            grid_x = grid_xy[:, 0].reshape(shp)
+            grid_y = grid_xy[:, 1].reshape(shp)
+
+            gridnans = (np.isnan(grid_x.reshape(shp)) | np.isnan(grid_y.reshape(shp)))
+            nans = (np.isnan(self.amp.flatten()) | np.isnan(points[:, 0]) | np.isnan(points[:, 1]))
+            self.__amp[~gridnans] = griddata(points[~nans], self.amp.flatten()[~nans], (grid_x[~gridnans], grid_y[~gridnans]), method="linear")
 
 
 
