@@ -47,6 +47,12 @@ class Manager7k:
                 key, self.file_catalog)
         )
 
+    def get_configuration_record(self):
+        record_offsets = self._offsets_for_type[7001]
+        assert len(record_offsets) == 1
+        return self.read_record(7001, record_offsets[0])
+
+
     def get_next_record(self, record_type, offset_start, offset_end):
         """
         Get the offset and first record of type record_type which has a higher
@@ -217,6 +223,11 @@ class Ping:
         return self._manager.get_records_during_ping(
             1013, self.sonar_settings.frame.time, self.next_ping_start,
             self._own_offset)
+
+    @cached_property
+    def configuration(self) -> DataParts:
+        """ Returns the 7001 record, which shared for all pings in a file """
+        return self._manager.get_configuration_record()
 
     @cached_property
     def beam_geometry(self) -> Optional[DataParts]:

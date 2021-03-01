@@ -18,6 +18,7 @@ with open(filename, 'rb', buffering=0) as fid:
     count = 10
     records = dict()
     records[7000] = r7k.read_records(7000, fid, file_catalog, count=count)
+    records[7001] = r7k.read_records(7001, fid, file_catalog, count=count)
     records[7004] = r7k.read_records(7004, fid, file_catalog, count=count)
     records[7018] = r7k.read_records(7018, fid, file_catalog, count=count)
     records[1003] = r7k.read_records(1003, fid, file_catalog, count=count)

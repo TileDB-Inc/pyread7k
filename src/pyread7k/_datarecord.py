@@ -5,6 +5,7 @@ from ._datablock import DRFBlock
 from ._datablock import elemT
 from ._datablock import elemD_
 
+from xml.etree import ElementTree as ET
 import io
 import abc
 from collections import namedtuple
@@ -131,6 +132,40 @@ class _DataRecord7000(DataRecord):
             start_offset: int):
         rth = self._block_rth.read(source)
         return rth, None, None
+
+
+class _DataRecord7001(DataRecord):
+
+    _block_rth = DataBlock((
+        elemD_('sonar_serial_number', elemT.u64),
+        elemD_('number_of_devices', elemT.u32),
+    ))
+
+    _block_rd_info = DataBlock((
+        elemD_('identifier', elemT.u32),
+        elemD_('description', elemT.c8, 60), # We should parse this better
+        elemD_('alphadata_card', elemT.u32),
+        elemD_('serial_number', elemT.u64),
+        elemD_('info_length', elemT.u32),
+    ))
+
+    def _read(
+            self, source: io.RawIOBase,
+            drf: DRFBlock.DRF,
+            start_offset: int):
+        rth = self._block_rth.read(source)
+
+        rd = []
+        print(rth["number_of_devices"])
+        for _ in range(rth["number_of_devices"]):
+            device_data = self._block_rd_info.read(source)
+            device_data["description"] = b"".join(device_data["description"])
+            xml_string = source.read(device_data["info_length"])
+            # Indexing removes a weird null-termination
+            device_data["info"] = ET.fromstring(xml_string[:-1])
+            rd.append(device_data)
+
+        return rth, rd, None
 
 
 class _DataRecord7200(DataRecord):
@@ -425,6 +460,7 @@ class _DataRecord1013(DataRecord):
 
 # create instances:
 DataRecord._instances[7000] = _DataRecord7000()
+DataRecord._instances[7001] = _DataRecord7001()
 DataRecord._instances[7004] = _DataRecord7004()
 DataRecord._instances[7200] = _DataRecord7200()
 DataRecord._instances[7300] = _DataRecord7300()
