@@ -2,8 +2,37 @@
 
 Library for reading 7k files. Low-level direct control is available with the _utils.py functions, which are reexported at top level. A higher-level abstraction is provided by Ping and PingDataset in _ping.py which allows you to work with pings, and automatically get relevant data, instead of reading and managing records individual records manually.
 
+The library also contains some additional functionality for processing, motion correcting, translating, and plotting ping data.
 
-# Work
+# Requirements
+
+The library doesn't have any other dependencies than the ones defined in the setup.py, so it should manage all python based dependencies.
+However you will need to aquire some s7k files on your own.
+
+The library can be installed directly from the Teledyne github repository using pip as seen below:
+```bash
+pip install git+https://github.com/Teledyne-Marine/pyread7k.git
+```
+
+# Getting started
+Working with the pyread7k library is quite intuitive, and given that you have a s7k file, you can load a dataset using the PingDataset class.
+This gives you access to the pings, which consist of IQ or beamformed data. Much of the functionality currently implemented is geared towards
+beamformed data, but Beamforming is in the backlog, so that s7k files with only IQ data can be processed as well.
+
+The library also contains code to process pings in a variety of ways. These processing functions are grouped into an object called Beamformed, which when instantiated will allow you to process beamformed pings like so:
+
+```python
+# Excluding ranges or beams
+ping.exclude_ranges(min_range_meter=30, max_range_meter=100)
+ping.exclude_bearings(min_beam_index=10, max_beam_index=70)
+```
+
+It also contains functions for decimating, resampling, and normalizing the data in a variety of ways.
+
+Last but not least, the library contains code for motion correction and translation of the pings, i.e. the process of transforming the ping from a rolled/pitched/yawed ping into a ping taken by a stationary vessel. The translation functionality can be used to get the ping data as if the vessel had been in a different location, and is mainly used for ping stacking.
+
+
+# Notes
 
 ## Speeding up interpolation
 
@@ -18,3 +47,4 @@ We can still add some speedup by using cuda, but currently the most used cuda ba
 * Add opening angle to seabed intersection function
 * Create a function to transform roll, pitch and heave, so that they apply to a rotated sonar
 * Add sonar displacement from rotation axis to motion correction code
+* Add beamforming
