@@ -19,7 +19,6 @@ setuptools.setup(
     ],
     install_requires=[
         "psutil==5.8.0",
-        "xarray==0.16.2",
         "numpy==1.20.1",
         "scipy==1.6.0",
         "geopy==2.1.0",

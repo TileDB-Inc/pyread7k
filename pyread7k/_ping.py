@@ -13,10 +13,9 @@ import gc
 import math
 from datetime import timedelta
 
-# %%
 from enum import Enum
 from functools import cached_property
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from geopy import Point
@@ -66,6 +65,12 @@ class Manager7k:
         self._offsets_for_type = LazyMap(
             initializer=lambda key: get_record_offsets(key, self.file_catalog)
         )
+
+    def get_configuration_record(self):
+        record_offsets = self._offsets_for_type[7001]
+        assert len(record_offsets) == 1
+        return self.read_record(7001, record_offsets[0])
+
 
     def get_next_record(self, record_type, offset_start, offset_end):
         """
@@ -253,6 +258,11 @@ class Ping:
         )
 
     @cached_property
+    def configuration(self) -> DataParts:
+        """ Returns the 7001 record, which shared for all pings in a file """
+        return self._manager.get_configuration_record()
+
+    @cached_property
     def beam_geometry(self) -> Optional[DataParts]:
         """ Returns 7004 record """
         return self._get_single_associated_record(7004)
@@ -365,7 +375,7 @@ class PingDataset:
     def __len__(self) -> int:
         return len(self.pings)
 
-    def __getitem__(self, index: int) -> Ping:
+    def __getitem__(self, index: slice) -> Union[Ping, List[Ping]]:
         return self.pings[index]
 
 
