@@ -2,9 +2,10 @@
 This is a simple example of using the Ping type to combine several record types
 to perform basic outlier detection, and pinpoint position of the detection.
 """
-from pyread7k import ConcatDataset, PingDataset, PingType
 import matplotlib.pyplot as plt
 import numpy as np
+
+from pyread7k import ConcatDataset, PingDataset, PingType
 
 # Setup dataset
 path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_beamformed/Port_200kHz_CW_125m_E/20200603_130905.s7k"

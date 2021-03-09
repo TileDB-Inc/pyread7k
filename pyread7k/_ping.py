@@ -8,32 +8,21 @@ Expected order of records for a ping:
 7013, 7018, 7019, 7028, 7029, 7037, 7038, 7039, 7041, 7042, 7048, 7049, 7057,
 7058, 7068, 7070
 
-# TODO: Enable preprocessing functions in the ping class
-
 """
+import gc
 import math
+from datetime import timedelta
 
 # %%
 from enum import Enum
 from functools import cached_property
-from typing import Callable, List, Optional
-from datetime import timedelta, datetime
+from typing import List, Optional
 
 import numpy as np
-import xarray as xr
 from geopy import Point
-from geopy.distance import distance
-from scipy import signal
-from scipy.interpolate import interp2d, griddata, NearestNDInterpolator, RectBivariateSpline
-from scipy.spatial import ConvexHull
-import gc
-# import cuspatial
-# import cudf
-# from numba import cuda
 
 from . import _datarecord
 from ._datarecord import DataParts
-from . import _motion_correction as motion
 from ._utils import (
     get_record_offsets,
     read_file_catalog,
@@ -41,14 +30,9 @@ from ._utils import (
     read_records,
 )
 
+
 class PingDataNotProcessed(Exception):
     pass
-
-
-class PingWeighting(Enum):
-    WEIGHTED_MEAN = 0
-    MEAN = 1
-    MEDIAN = 2
 
 
 class PingData(Enum):
@@ -185,7 +169,7 @@ class Ping:
     Properties of the ping are loaded efficiently on-demand.
     """
 
-    minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq", "__amp", "__phs"]
+    minimizable_properties = ["beamformed", "tvg", "beam_geometry", "raw_iq"]
 
     def __init__(
         self,
@@ -199,15 +183,6 @@ class Ping:
         # This is the only record always in-memory, as it defines the ping.
         self.sonar_settings: DataParts = settings_record
         self.ping_number: int = settings_record.header["ping_number"]
-        self.__amp = None
-        self.__phs = None
-        self.__ranges = None
-        self.__bearings = None
-        self.__decimated = False
-        self.__range_normalized = False
-        self.__beam_normalized = False
-        self.__motion_corrected = False
-        self.__movement_corrected = False
 
         self._manager = manager
         self._own_offset = settings_offset  # This ping's start offset
@@ -313,242 +288,25 @@ class Ping:
         long = self.position_set[0].header["long"] * 180 / np.pi
         return Point(lat, long)
 
-    def data_is_loaded(self) -> bool:
-        """ Checks if data has been loaded """
-        if any([self.__amp is None, self.__phs is None]):
-            return False
-        else:
-            return True
-
-    def reset(self) -> None:
-        if self.data_is_loaded():
-            self.__amp = None
-            self.__phs = None
-            self.__ranges = None
-            self.__bearings = None
-            self.__decimated = False
-            self.__range_normalized = False
-            self.__beam_normalized = False
-            self.__motion_corrected = False
-            self.__movement_corrected = False
-
-    def motion_for_sample(self, sample):
+    def receiver_motion_for_sample(self, sample: int):
         """ Find the most appropriate motion data for a sample based on time """
-        time = self.sonar_settings.frame.time + \
-            timedelta(seconds=sample / self.sonar_settings.header["sample_rate"])
-        rph_index = np.searchsorted([m.frame.time for m in self.roll_pitch_heave_set], time)
-        heading_index = np.searchsorted([m.frame.time for m in self.heading_set], time)
+        time = self.sonar_settings.frame.time + timedelta(
+            seconds=sample / self.sonar_settings.header["sample_rate"]
+        )
+        max_rph_idx = len(self.roll_pitch_heave_set) - 1
+        max_h_idx = len(self.heading_set) - 1
+        rph_index = np.min(
+            [
+                np.searchsorted(
+                    [m.frame.time for m in self.roll_pitch_heave_set], time
+                ),
+                max_rph_idx,
+            ]
+        )
+        heading_index = np.min(
+            [np.searchsorted([m.frame.time for m in self.heading_set], time), max_h_idx]
+        )
         return self.roll_pitch_heave_set[rph_index], self.heading_set[heading_index]
-
-    def __sample_dist(self, s):
-        return s / self.sonar_settings.header["sample_rate"] * self.sonar_settings.header["sound_velocity"] / 2
-
-    def load_data(self) -> None:
-        """ Loads amplitude and phase data into memory """
-        if self.has_beamformed and not self.data_is_loaded():
-            self.__amp: np.ndarray = self.beamformed.data["amp"]
-            self.__phs: np.ndarray = self.beamformed.data["phs"] / 2 ** 15 * np.pi
-
-            n_samples, n_bearings = self.__amp.shape
-            sonar_range = self.sonar_settings.header["range"]
-
-            range_samples = np.linspace(0, sonar_range, n_samples)
-            beam_angles = self.beam_geometry.data["horz_angle"]
-
-            self.__ranges = range_samples
-            self.__bearings = beam_angles
-
-    def exclude_ranges(
-        self, min_range_meter: float = 0, max_range_meter: float = 2000
-    ) -> None:
-        """Excludes all data outside min_range_meter: max_range_meter"""
-        if not self.data_is_loaded():
-            raise AttributeError("Data has not been loaded! Call load_data() first.")
-
-        if min_range_meter > max_range_meter:
-            raise ValueError("Minimum range can't be larger than maximum range!")
-
-        dr = self.range_samples[1] - self.range_samples[0]
-        min_idx = math.ceil(int(min_range_meter / dr)) + 1
-        max_idx = math.ceil(int(max_range_meter / dr))
-        self.__ranges = self.__ranges[min_idx:max_idx]
-        self.__amp = self.__amp[min_idx:max_idx, :]
-        self.__phs = self.__phs[min_idx:max_idx, :]
-
-    def exclude_bearings(
-        self, min_beam_index: int = 0, max_beam_index: int = 1024
-    ) -> None:
-        """Excludes all data outside min_beam_idx: max_beam_idx"""
-        if not self.data_is_loaded():
-            raise AttributeError("Data has not been loaded! Call load_data() first.")
-
-        if min_beam_index > max_beam_index:
-            raise ValueError(
-                "Minimum beam index can't be larger than maximum beam index!"
-            )
-
-        self.__bearings = self.__bearings[min_beam_index : max_beam_index + 1]
-        self.__amp = self.__amp[:, min_beam_index : max_beam_index + 1]
-        self.__phs = self.__phs[:, min_beam_index : max_beam_index + 1]
-
-    def decimate(self, q: int = 8) -> None:
-        """Function used to downsample data. Default is around a factor 8"""
-        if not self.__decimated:
-            # The amplitude can be decimated as is
-            self.__amp = signal.decimate(
-                self.__amp.astype(float), q=q, n=8, ftype="fir", zero_phase=True, axis=0
-            )
-            # The phase however needs to be decomposed into sine and cosine and recomposed
-            # after the decimation
-            phs_sin = signal.decimate(
-                np.sin(self.__phs), q=q, n=8, ftype="fir", zero_phase=True, axis=0
-            )
-            phs_cos = signal.decimate(
-                np.cos(self.__phs), q=q, n=8, ftype="fir", zero_phase=True, axis=0
-            )
-            self.__phs = np.arctan2(phs_sin, phs_cos)
-            self.__ranges = np.linspace(
-                self.__ranges[0], self.__ranges[-1], self.shape[0]
-            )
-            self.__decimated = True
-
-    def resample(self, M: int) -> None:
-        """Function used to resample data"""
-        self.__amp = signal.resample(self.__amp.astype(float), num=M, axis=0)
-        phs_sin = signal.resample(np.sin(self.__phs).astype(float), num=M, axis=0)
-        phs_cos = signal.resample(np.cos(self.__phs).astype(float), num=M, axis=0)
-        self.__phs = np.arctan2(phs_sin, phs_cos)
-        self.__ranges = np.linspace(self.__ranges[0], self.__ranges[-1], self.shape[0])
-
-    @property
-    def range_samples(self) -> Optional[np.ndarray]:
-        if self.data_is_loaded():
-            return self.__ranges
-
-    @property
-    def beam_angles(self) -> Optional[np.ndarray]:
-        if self.data_is_loaded():
-            return self.__bearings
-
-    @property
-    def amp(self) -> Optional[np.ndarray]:
-        if self.data_is_loaded():
-            return self.__amp
-
-    @property
-    def phs(self) -> Optional[np.ndarray]:
-        if self.data_is_loaded():
-            return self.__phs
-
-    @property
-    def phs_diffs(self) -> Optional[np.ndarray]:
-        if self.data_is_loaded():
-            return np.diff(np.unwrap(self.__phs, discont=np.pi, axis=0), axis=0)
-
-    @property
-    def shape(self):
-        if self.data_is_loaded():
-            return self.__amp.shape
-
-    def preprocess(
-        self,
-        min_range_meter=80,
-        max_range_meter=1500,
-        min_beam_index=0,
-        max_beam_index=1024,
-        decimate=8,
-        sample_length: Optional[float] = None,
-        range_normalization_func=np.median,
-    ):
-        self.reset()
-        self.load_data()
-        if decimate != 0:
-            self.decimate(q=decimate)
-        if sample_length is not None:
-            dr = self.range_samples[-1] - self.range_samples[0]
-            M = int(dr / sample_length)
-            self.resample(M)
-        self.exclude_ranges(
-            min_range_meter=min_range_meter, max_range_meter=max_range_meter
-        )
-        self.exclude_bearings(
-            min_beam_index=min_beam_index, max_beam_index=max_beam_index
-        )
-        self.range_normalize(range_normalization_func)
-
-    def range_normalize(self, func: Callable = np.median):
-        if not self.__range_normalized:
-            self.__amp = self.__amp / func(self.__amp, axis=1).reshape(-1, 1)
-            self.__range_normalized = True
-
-    def beam_normalize(self, func: Callable = np.median):
-        if not self.__beam_normalized:
-            self.__amp = self.__amp / func(self.__amp, axis=0)
-            self.__beam_normalized = True
-
-    def correct_motion(
-        self,
-        distance: float,
-        bearing: float,
-        dyaw: float = 0,
-        **kwargs
-    ):
-        """Correct amplitude data of ping by applying yaw, roll, and movement corrections
-
-        The roll taken from the roll of the vessel at ping time. The yaw and position corrections
-        are input parameters, as they should be applied according to the difference between the
-        yaw of two pings, or else we'll just rotate the data with respect to the bearing which
-        isn't necessary for neither stacking nor getting better quality data.
-
-        """
-        if not self.data_is_loaded():
-            raise AttributeError("Data has not been loaded! Call load_data() first.")
-
-        roll = -kwargs.get("roll", self.roll_pitch_heave_set[0].header["roll"])
-        pitch = kwargs.get("pitch", self.roll_pitch_heave_set[0].header["pitch"])
-        heave = kwargs.get("heave", self.roll_pitch_heave_set[0].header["heave"])
-        disp = kwargs.get("disp", 0)
-
-        # TODO: get these from records
-        depth = kwargs.get("depth", 30) + heave
-        sonar_tilt = kwargs.get("sonar_tilt", 0)
-        sonar_angle = kwargs.get("sonar_angle", 0)
-        disp = kwargs.get("disp", 0)
-
-        # We use the RectBivariateSpline as it is super fast
-        # vals = self.amp.copy()
-        # vals[np.isnan(vals)] = 0
-
-
-        new_beams, new_ranges = np.meshgrid(
-            self.beam_angles, self.range_samples, indexing="xy"
-        )
-
-        range_bearing = np.dstack((new_ranges, new_beams)).reshape(-1, 2)
-        grid_xy, _ = motion.to_cartesian(range_bearing.copy(), depth=depth, disp=disp)
-        # grid_xy = motion.to_cartesian_v2(range_bearing.copy())
-        shp = new_beams.shape
-        transforming = False
-        if any([np.abs(roll) > 1e-3, np.abs(dyaw) > 1e-3]):
-            points, points_cond = motion.to_cartesian_transformed(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
-            # points = motion.to_cartesian_transformed_v2(range_bearing.copy(), depth=depth, roll=roll, yaw=dyaw, disp=disp)
-            if distance != 0:
-                points = motion.translate_position(points, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
-
-            transforming = True
-        elif distance != 0:
-            points = motion.translate_position(grid_xy, dist=distance, movement_angle=bearing, sonar_angle=sonar_angle)
-            points_cond = np.ones_like(new_beams)
-            transforming = True
-
-        if transforming:
-            grid_x = grid_xy[:, 0].reshape(shp)
-            grid_y = grid_xy[:, 1].reshape(shp)
-
-            gridnans = (np.isnan(grid_x.reshape(shp)) | np.isnan(grid_y.reshape(shp)))
-            nans = (np.isnan(self.amp.flatten()) | np.isnan(points[:, 0]) | np.isnan(points[:, 1]))
-            self.__amp[~gridnans] = griddata(points[~nans], self.amp.flatten()[~nans], (grid_x[~gridnans], grid_y[~gridnans]), method="linear")
-
 
 
 # %%
@@ -610,110 +368,6 @@ class PingDataset:
     def __getitem__(self, index: int) -> Ping:
         return self.pings[index]
 
-    def stack(
-        self,
-        ping_indices: List[int],
-        min_range_meter: float = 80,
-        max_range_meter: float = 1500,
-        min_beam_index: int = 0,
-        max_beam_index: int = 1024,
-        decimate: int = 8,
-        sample_length: float = 0.2,
-        range_normalization_func: Callable = np.median,
-        stacking_method: PingWeighting = PingWeighting.MEAN,
-        weights: Optional[List[float]] = None,
-    ) -> xr.DataArray:
-
-        if stacking_method == PingWeighting.WEIGHTED_MEAN:
-            if weights is None:
-                raise ValueError("Weights must be specified for weighted mean")
-            if len(weights) != len(ping_indices):
-                raise ValueError(
-                    "For weighted mean stacking, the number of weights and the number of pings must be equal!"
-                )
-
-        # Define empty stacking array
-        # TODO: Take variable sonar range pings into account
-
-        # Get last ping of the index
-        last_ping = self.pings[ping_indices[-1]]
-        last_ping.preprocess(
-            min_range_meter=min_range_meter,
-            max_range_meter=max_range_meter,
-            min_beam_index=min_beam_index,
-            max_beam_index=max_beam_index,
-            decimate=decimate,
-            sample_length=sample_length,
-            range_normalization_func=range_normalization_func,
-        )
-        # End ping shouldn't be translated
-        last_ping.correct_motion(distance=0, bearing=0)
-
-        motion_corrected_pings = []
-
-        # For each other point in the list of indices correct the motion
-        # and distance, so that we have overlapping data
-        for idx in ping_indices[:-1]:
-            self.pings[idx].preprocess(
-                min_range_meter=min_range_meter,
-                max_range_meter=max_range_meter,
-                min_beam_index=min_beam_index,
-                max_beam_index=max_beam_index,
-                decimate=decimate,
-                sample_length=sample_length,
-                range_normalization_func=range_normalization_func,
-            )
-            current_point = self.pings[idx].point
-            distance_to_endpoint = distance(current_point, last_ping.point).meters
-            bearing_between_points = bearing(current_point, last_ping.point)
-            dyaw = (
-                self.pings[ping_indices[-1]].heading_set[0].header["heading"]
-                - self.pings[idx].heading_set[0].header["heading"]
-            )
-
-            self.pings[idx].correct_motion(
-                distance=-distance_to_endpoint,
-                bearing=bearing_between_points,
-                dyaw=dyaw,
-            )
-
-            # This is obviously not the most optimal way of computing a function of
-            #
-            # motion_corrected_pings.append(self.pings[idx].amp)
-            corrected_ping_xarray = xr.DataArray(
-                self.pings[idx].amp,
-                dims=("ranges", "bearings"),
-                coords={
-                    "ranges": self.pings[idx].range_samples,
-                    "bearings": self.pings[idx].beam_angles,
-                },
-            )
-            motion_corrected_pings.append(corrected_ping_xarray)
-
-        # Append the endping to the list as well
-        corrected_ping_xarray = xr.DataArray(
-            last_ping.amp,
-            dims=("ranges", "bearings"),
-            coords={
-                "ranges": self.pings[idx].range_samples,
-                "bearings": self.pings[idx].beam_angles,
-            },
-        )
-        motion_corrected_pings.append(corrected_ping_xarray)
-        motion_corrected_pings = xr.concat(motion_corrected_pings, "pings")
-        # motion_corrected_pings.append(last_ping.amp)
-        # return stacking_method(motion_corrected_pings, axis=0)
-        if stacking_method == PingWeighting.WEIGHTED_MEAN:
-            weights = xr.DataArray(weights, dims=("pings"), name="weights")  # type: ignore
-            motion_corrected_pings = motion_corrected_pings.weighted(weights)
-            motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
-        elif stacking_method == PingWeighting.MEDIAN:
-            motion_corrected_pings = motion_corrected_pings.median(dim="pings")
-        elif stacking_method == PingWeighting.MEAN:
-            motion_corrected_pings = motion_corrected_pings.mean(dim="pings")
-
-        return motion_corrected_pings
-
 
 class ConcatDataset:
     """
@@ -739,17 +393,3 @@ class ConcatDataset:
         else:
             sample_index = index - self.cum_lengths[dataset_index - 1]
         return self.datasets[dataset_index][sample_index]
-
-
-def bearing(pointA, pointB):
-    lat1 = math.radians(pointA[0])
-    lat2 = math.radians(pointB[0])
-
-    dL = math.radians(pointB[1] - pointA[1])
-
-    x = math.sin(dL) * math.cos(lat2)
-    y = math.cos(lat1) * math.sin(lat2) - (
-        math.sin(lat1) * math.cos(lat2) * math.cos(dL)
-    )
-
-    return math.radians(math.atan2(x, y))

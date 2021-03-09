@@ -1,8 +1,11 @@
-from pyread7k import PingDataset, PingType, Ping
-import pytest
-import numpy as np
-from dotenv import find_dotenv, load_dotenv
 from test import bf_filepath
+
+import numpy as np
+import pytest
+from dotenv import find_dotenv, load_dotenv
+
+from pyread7k import Ping, PingDataset, PingType
+from pyread7k._ping_processing import Beamformed
 
 load_dotenv(find_dotenv())
 
@@ -21,31 +24,21 @@ def test_read_s7kfile(pingdataset: PingDataset):
     assert isinstance(pingdataset, PingDataset)
 
 
-def test_get_data(ping: Ping):
-    assert ping.data_is_loaded() == False
-    ping.load_data()
-    assert ping.data_is_loaded() == True
-    assert isinstance(ping.amp, np.ndarray)
-    assert isinstance(ping.phs, np.ndarray)
-
-
 def test_range_exclusion(ping: Ping):
     # Min exclusion
-    ping.load_data()
-    original_shape = ping.shape
-    ping.exclude_ranges(min_range_meter=50)
-    assert ping.range_samples.min() >= 50
-    assert ping.shape != original_shape
+    p = Beamformed(ping)
+    original_shape = p.shape
+    p.exclude_ranges(min_range_meter=50)
+    assert p.ranges.min() >= 50
+    assert p.shape != original_shape
 
     # Max exclusion
-    ping.reset()
-    ping.load_data()
-    ping.exclude_ranges(max_range_meter=50)
-    assert ping.range_samples.max() <= 50
-    assert ping.shape != original_shape
+    p.reset()
+    p.exclude_ranges(max_range_meter=50)
+    assert p.ranges.max() <= 50
+    assert p.shape != original_shape
 
     # ValueError
-    ping.reset()
-    ping.load_data()
+    p.reset()
     with pytest.raises(ValueError):
-        ping.exclude_ranges(min_range_meter=100, max_range_meter=50)
+        p.exclude_ranges(min_range_meter=100, max_range_meter=50)

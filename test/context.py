@@ -1,5 +1,6 @@
 import os
-from dotenv import load_dotenv, find_dotenv, set_key
+
+from dotenv import find_dotenv, load_dotenv, set_key
 
 filedir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(filedir)

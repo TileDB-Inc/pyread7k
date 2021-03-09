@@ -1,12 +1,12 @@
 # %%
 # import itertools
 # import math
+import datetime
 import os
-import datetime
 from test import bf_filepath
-import pytest
-import datetime
+
 import psutil
+import pytest
 
 from pyread7k import PingDataset, PingType
 
