@@ -18,7 +18,7 @@ from functools import cached_property
 from typing import List, Optional, Union
 
 import numpy as np
-from geopy import Point
+import geopy
 
 from . import _datarecord
 from ._datarecord import DataParts
@@ -293,10 +293,10 @@ class Ping:
         return self._get_single_associated_record(7038)
 
     @cached_property
-    def point(self):
+    def gps_position(self):
         lat = self.position_set[0].header["lat"] * 180 / np.pi
         long = self.position_set[0].header["long"] * 180 / np.pi
-        return Point(lat, long)
+        return geopy.Point(lat, long)
 
     def receiver_motion_for_sample(self, sample: int):
         """ Find the most appropriate motion data for a sample based on time """
