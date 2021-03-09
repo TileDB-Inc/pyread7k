@@ -30,15 +30,6 @@ from ._utils import (
 )
 
 
-class PingDataNotProcessed(Exception):
-    pass
-
-
-class PingData(Enum):
-    AMPLITUDE = 0
-    PHASE = 1
-
-
 class LazyMap(dict):
     """
     An advanced defaultdict, where the initializer may depend on the key.
