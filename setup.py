@@ -18,11 +18,13 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
+        "psutil==5.8.0",
+        "xarray==0.16.2",
         "numpy==1.20.1",
         "scipy==1.6.0",
         "geopy==2.1.0",
-        "psutil==5.8.0",
-        "xarray==0.16.2",
+        "scikit-image==0.18.1",
+        "numba==0.52.0",
     ],
     python_requires=">=3.6",
 )
