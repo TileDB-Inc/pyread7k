@@ -7,13 +7,6 @@ from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from skimage.measure import block_reduce
 
-from ._ping_processing import Beamformed
-
-
-class PingData(Enum):
-    AMP = 1
-    PHS = 2
-
 
 def plotwireframe(amp, ax: Optional[Axes] = None, rrf: int = 200):
     if ax is None:
@@ -36,8 +29,10 @@ def plotwireframe(amp, ax: Optional[Axes] = None, rrf: int = 200):
     plt.show()
 
 
-def plotping2d(
-    ping: Beamformed,
+def plot_ping_amp_2d(
+    amp: np.ndarray,
+    ranges: np.ndarray,
+    bearing: np.ndarray,
     ax: Optional[Axes] = None,
     cmap: Optional[Union[str, ListedColormap]] = "turbo",
     polar: Optional[bool] = False,
@@ -51,15 +46,15 @@ def plotping2d(
     vmin = kwargs.get("vmin", None)
     vmax = kwargs.get("vmax", None)
 
-    min_range = ping.ranges[0]
-    max_range = ping.ranges[-1]
-    min_beam = ping.bearings[0]
-    max_beam = ping.bearings[-1]
+    min_range = min(ranges)
+    max_range = max(ranges)
+    min_beam = min(bearing)
+    max_beam = max(bearing)
     extent = [min_beam, max_beam, min_range, max_range]
 
     if not polar:
         ax.imshow(
-            ping.amp,
+            amp,
             aspect="auto",
             origin="lower",
             cmap=cmap,
@@ -69,8 +64,8 @@ def plotping2d(
             interpolation=interpolation,
         )
     else:
-        theta, rng = np.meshgrid(ping.bearings, ping.ranges)
-        ax.pcolormesh(theta, rng, ping.amp, cmap=cmap)
+        theta, rng = np.meshgrid(bearing, ranges)
+        ax.pcolormesh(theta, rng, amp, cmap=cmap)
         ax.set_xlim([theta.min(), theta.max()])
         ax.set_theta_zero_location("N")
         ax.set_theta_direction(-1)
@@ -79,9 +74,3 @@ def plotping2d(
     plt.tight_layout()
 
     return ax
-
-
-def saveping(filepath, pingdata, ax, cmap, **kwargs):
-    ax = plotping2d(pingdata, ax, cmap, **kwargs)
-    dpi = kwargs.get("dpi", 200)
-    plt.savefig(filepath, dpi=dpi)
