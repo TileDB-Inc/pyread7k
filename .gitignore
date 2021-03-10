@@ -1,6 +1,7 @@
 # Python cache files:
 __pycache__
 .vscode
+.py[oc]
 
 # general data caches:
 cache
@@ -22,3 +23,6 @@ events.out.tfevents.*
 # visual studio:
 .vs
 .suo
+
+# .env files
+.env

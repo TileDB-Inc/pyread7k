@@ -5,27 +5,25 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pyread7k",
-    version="0.0.1",
+    version="0.0.3",
     author="Rasmus Klett Mortensen",
     author_email="rasmus.mortensen@teledyne.com",
     description="Reading 7k files",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://rot-bitbucket/projects/CB7123/repos/pyread7k",
-    packages=setuptools.find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=["pyread7k"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        "pytest",
-        "numpy",
-        "scipy",
-        "matplotlib",
-        "python-dotenv",
-        "psutil",
-        "xarray"
+        "psutil==5.8.0",
+        "numpy==1.20.1",
+        "scipy==1.6.0",
+        "geopy==2.1.0",
+        "scikit-image==0.18.1",
+        "numba==0.52.0",
     ],
-    python_requires='>=3.6',
+    python_requires=">=3.6",
 )
