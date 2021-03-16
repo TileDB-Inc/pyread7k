@@ -1,3 +1,6 @@
+"""
+Low-level classes for reading various 7k record types.
+"""
 # pylint: disable=invalid-name unnecessary-comprehension
 import abc
 import io
@@ -42,7 +45,12 @@ class DataParts(DataPartsBase):
 
 
 class DataRecord(metaclass=abc.ABCMeta):
-    """Template Class for S7k Data Records"""
+    """
+    Base class for all record readers.
+
+    Subclasses provide functionality for reading specific records.
+    These are NOT the classes returned to the library user, they are only readers.
+    """
 
     _block_drf = DRFBlock()
     _block_checksum = DataBlock((("checksum", ("u32",)),))
@@ -443,7 +451,7 @@ class _DataRecord1013(DataRecord):
 
 
 def record(type_id: int) -> DataRecord:
-    """Get a s7k record by record id """
+    """Get a s7k record reader by record id """
 
     rec = DataRecord.instance(type_id)
     if rec is None:

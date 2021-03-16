@@ -1,3 +1,6 @@
+"""
+Tools for reading structured binary data
+"""
 import abc
 import datetime
 import io
@@ -31,6 +34,9 @@ def elemD_(name: str, fmt: str, count=1):
 
 
 class DataBlock(metaclass=abc.ABCMeta):
+    """
+    Reads fixed-size blocks of structured binary data, according to a specified format
+    """
 
     _byte_order_fmt = "<"
     _map_size_to_fmt = dict(
@@ -138,6 +144,7 @@ class DataBlock(metaclass=abc.ABCMeta):
         return results
 
 
+# List of fields in a Data Record Frame.
 # Using only primitive fields, for parsing.
 DRF_PRIMITIVE_FIELDS = (
     "protocol_version",
@@ -168,6 +175,10 @@ DRF_REFINED_FIELDS = list(
 
 
 class DRFBlock(DataBlock):
+    """
+    Reads a Data Record Frame from binary data.
+    Specified in the Teledyne Reson Data Format Definition.
+    """
 
     DRF = namedtuple("DRF", DRF_REFINED_FIELDS)
 
