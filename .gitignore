@@ -2,6 +2,7 @@
 __pycache__
 .vscode
 .py[oc]
+poetry.lock
 
 # general data caches:
 cache

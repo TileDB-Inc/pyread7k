@@ -14,7 +14,7 @@ import math
 from datetime import timedelta
 
 from enum import Enum
-from functools import cached_property
+from functools import cached_property as cached_property_functools
 from typing import List, Optional, Union
 
 import numpy as np
@@ -28,6 +28,18 @@ from ._utils import (
     read_file_header,
     read_records,
 )
+
+
+def cached_property(func):
+    """
+    Fix functools.cached_property using decorator.decorator to preserve
+    docstrings and name.
+    Note that it does not properly preserve type hints!
+    """
+    cached_f = cached_property_functools(func)
+    cached_f.__name__ = func.__name__
+    cached_f.__doc__ = func.__doc__
+    return cached_f
 
 
 class LazyMap(dict):
@@ -250,7 +262,7 @@ class Ping:
 
     @cached_property
     def configuration(self) -> DataParts:
-        """ Returns the 7001 record, which shared for all pings in a file """
+        """ Returns the 7001 record, which is shared for all pings in a file """
         return self._manager.get_configuration_record()
 
     @cached_property
