@@ -1,15 +1,25 @@
+from __future__ import annotations
 """
 Class definitions for Data Format Definition records.
+Records returned by the pyread7k API are of these types, NOT of _datarecord types.
+
+Naming conventions:
+Classes are named after their DFD entry, excluding any redundat "data" or "record" endings.
+Fields are named as closely after DFD as possible, preferring verbose over ambiguous.
 """
-from typing import NamedTuple
+from typing import Optional
 import numpy as np
 import datetime
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class DataRecordFrame:
+    """
+    The Data Record Frame is the wrapper in which all records (sensor data or
+    otherwise) shall be embedded.
+    """
     protocol_version : int
     offset : int
     sync_pattern : int
@@ -22,14 +32,97 @@ class DataRecordFrame:
     device_id : int
     system_enumerator : int
     flags : int
+    checksum : Optional[int] = None
+
+    def __str__(self):
+        return f"DataRecordFrame(record_type_id={self.record_type_id}, time={str(self.time)}"
 
 
 @dataclass
 class BaseRecord:
+    """
+    The base from which all records inherit.
+    """
     frame : DataRecordFrame
+    record_type : int # Should be overridden by subclasses
+
+
+@dataclass
+class Position(BaseRecord):
+    """
+    Record 1003
+    Global or local positioning data. Also see record 1011.
+    Depending on position_type, this is either latitude/longitude data
+    or northing/easting data. The corresponding properties are None if
+    they are not available.
+    """
+    record_type : int = field(default=1003, init=False)
+
+    datum_id : int
+    latency : float
+    latitude_northing : float
+    longitude_easting : float
+    height : float
+    position_type : int
+    utm_zone : int
+    quality_flag : int
+    positioning_method : int
+    number_of_satellites : int
+
+    @property
+    def latitude(self):
+        """ Latitude is only available for position type 0 """
+        if self.position_type == 0:
+            return self.latitude_northing
+
+    @property
+    def longitude(self):
+        """ Longitude is only available for position type 0 """
+        if self.position_type == 0:
+            return self.longitude_easting
+
+    @property
+    def northing(self):
+        """ Northing is only available for position type 1 """
+        if self.position_type == 1:
+            return self.latitude_northing
+
+    @property
+    def easting(self):
+        """ Easting is only available for position type 1 """
+        if self.position_type == 1:
+            return self.longitude_easting
+
+
+@dataclass
+class RollPitchHeave(BaseRecord):
+    """
+    Record 1012
+    Vessel motion data
+    """
+    record_type : int = field(default=1012, init=False)
+
+    roll : float
+    pitch : float
+    heave : float
+
+
+@dataclass
+class Heading(BaseRecord):
+    """ Record 1013 """
+    record_type : int = field(default=1013, init=False)
+
+    heading : float
+
 
 @dataclass
 class SonarSettings(BaseRecord):
+    """
+    Record 7000
+    Contains the current sonar settings.
+    """
+    record_type : int = field(default=7000, init=False)
+
     sonar_id : int
     ping_number : int
     multi_ping_sequence : int
@@ -70,12 +163,116 @@ class SonarSettings(BaseRecord):
     sound_velocity : float
     spreading : float
 
+
+@dataclass
+class BeamGeometry(BaseRecord):
+    """ Record 7004 """
+    record_type : int = field(default=7004, init=False)
+
+    sonar_id : int
+    number_of_beams : int
+    vertical_angles : np.ndarray
+    horizontal_angles : np.ndarray
+    beam_width_ys : np.ndarray
+    beam_width_xs : np.ndarray
+    tx_delays : Optional[np.ndarray]
+
+
+@dataclass
+class TVG(BaseRecord):
+    """ Record 7010 """
+    record_type : int = field(default=7010, init=False)
+
+    sonar_id : int
+    ping_number : int
+    multi_ping_sequence : int
+    number_of_samples : int
+
+    gains : np.ndarray
+
+
 @dataclass
 class Beamformed(BaseRecord):
+    """
+    Record 7018
+    Contains the sonar beam intensity (magnitude) and phase data.
+    """
+    record_type : int = field(default=7018, init=False)
+
     sonar_id : int
     ping_number : int
     is_multi_ping : bool
     number_of_beams : int
     number_of_samples : int
+
     amplitudes : np.ndarray
     phases : np.ndarray
+
+
+@dataclass
+class RawIQ(BaseRecord):
+    """
+    Record 7038
+    Raw IQ data. Draft definition!
+    """
+    record_type : int = field(default=7038, init=False)
+    serial_number : int
+    ping_number : int
+    channel_count : int
+    n_samples : int
+    n_actual_channels : int
+    start_sample : int
+    stop_sample : int
+    sample_type : int
+
+    channel_array : np.ndarray
+
+    iq : np.ndarray
+
+
+@dataclass
+class FileHeader(BaseRecord):
+    """ Record 7200. First record of 7k data file. """
+    record_type : int = field(default=7200, init=False)
+
+    file_id : int
+    version_number : int
+    session_id : int
+    record_data_size : int
+    number_of_devices : int
+    recording_name : str
+    recording_program_version_number : str
+    user_defined_name : str
+    notes : str
+
+    device_ids : tuple[int, ...]
+    system_enumerators : tuple[int, ...]
+
+    catalog_size : int
+    catalog_offset : int
+
+
+@dataclass
+class FileCatalog(BaseRecord):
+    """ Record 7300.
+    7k file catalog record, placed at the end of log files.
+    record_type : int = field(default=7300, init=False)
+
+    The file catalog contains one entry for each record in the log file,
+    including the 7200 file header record, but excluding the 7300 file catalog
+    record. The information corresponds to the record frame, plus the offset in
+    the file.
+    """
+    record_type : int = field(default=7300, init=False)
+
+    size : int
+    version : int
+    number_of_records : int
+
+    sizes : list[int]
+    offsets : list[int]
+    record_types : list[int]
+    device_ids : list[int]
+    system_enumerators : list[int]
+    times : list[int]
+    record_counts : list[int]

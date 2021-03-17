@@ -1,7 +1,8 @@
 import csv
 import io
 
-from ._datarecord import DataParts as _DataParts
+from . import records
+from .records import FileHeader, FileCatalog
 from ._datarecord import record as _record
 
 __all__ = [
@@ -9,37 +10,37 @@ __all__ = [
     "read_file_catalog",
     "get_record_offsets",
     "get_record_count",
-    "records",
+    "gen_records",
     "read_records",
     "export_catalog",
 ]
 
 
-def read_file_header(source: io.RawIOBase) -> _DataParts:
+def read_file_header(source: io.RawIOBase) -> FileHeader:
     return _record(7200).read(source)
 
 
-def read_file_catalog(source: io.RawIOBase, file_header: _DataParts) -> _DataParts:
-    source.seek(file_header.od["catalog_offset"])
-    file_catalog: _DataParts = _record(7300).read(source)
+def read_file_catalog(source: io.RawIOBase, file_header: FileHeader) -> FileCatalog:
+    source.seek(file_header.catalog_offset)
+    file_catalog: FileCatalog = _record(7300).read(source)
     return file_catalog
 
 
-def get_record_offsets(type_id: int, file_catalog: _DataParts) -> tuple:
+def get_record_offsets(type_id: int, file_catalog: FileCatalog) -> tuple:
 
-    cat_zip = zip(file_catalog.rd["offset"], file_catalog.rd["record_type_id"])
+    cat_zip = zip(file_catalog.offsets, file_catalog.record_types)
 
     return tuple(offset for offset, _type_id in cat_zip if _type_id == type_id)
 
 
-def get_record_count(type_id: int, file_catalog: _DataParts) -> int:
+def get_record_count(type_id: int, file_catalog: FileCatalog) -> int:
     return len(get_record_offsets(type_id, file_catalog))
 
 
-def records(
+def gen_records(
     type_id: int,
     source: io.RawIOBase,
-    file_catalog: _DataParts,
+    file_catalog: FileCatalog,
     *,
     first_idx=0,
     count=None,
@@ -62,18 +63,18 @@ def records(
 def read_records(
     type_id: int,
     source: io.RawIOBase,
-    file_catalog: _DataParts,
+    file_catalog: FileCatalog,
     *,
     first_idx=0,
     count=None,
-) -> _DataParts:
+) -> records.BaseRecord:
 
     return tuple(
-        records(type_id, source, file_catalog, first_idx=first_idx, count=count)
+        gen_records(type_id, source, file_catalog, first_idx=first_idx, count=count)
     )
 
 
-def export_catalog(filename: str, file_catalog: _DataParts):
+def export_catalog(filename: str, file_catalog: FileCatalog):
 
     with open(filename, "w", newline="") as csvfile:
         writer = csv.writer(
@@ -83,9 +84,9 @@ def export_catalog(filename: str, file_catalog: _DataParts):
         writer.writerow(["idx", "record_id", "file_offset", "size"])
         for idx, (type_id, offset, size) in enumerate(
             zip(
-                file_catalog.rd["record_type_id"],
-                file_catalog.rd["offset"],
-                file_catalog.rd["size"],
+                file_catalog.record_types,
+                file_catalog.offsets,
+                file_catalog.sizes,
             )
         ):
             writer.writerow(str(n) for n in [idx, type_id, offset, size])

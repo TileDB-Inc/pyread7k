@@ -12,38 +12,6 @@ import numpy as np
 from ._datablock import DataBlock, DRFBlock, elemD_, elemT
 from . import records
 
-DataPartsBase = namedtuple("DataParts", ("drf", "rth", "rd", "od", "checksum"))
-
-
-class DataParts(DataPartsBase):
-    """
-    Extends DataPartsBase to provide some more descriptive names
-    """
-
-    @property
-    def frame(self):
-        return self.drf
-
-    @property
-    def header(self):
-        return self.rth
-
-    @property
-    def data(self):
-        return self.rd
-
-    @property
-    def optional_data(self):
-        return self.od
-
-    def __str__(self):
-        msg = (
-            "DataParts("
-            + f"type={self.frame.record_type_id},"
-            + f"time={self.frame.time})"
-        )
-        return msg
-
 
 class DataRecord(metaclass=abc.ABCMeta):
     """
@@ -69,14 +37,10 @@ class DataRecord(metaclass=abc.ABCMeta):
         parsed_data = self._read(source, drf, start_offset)
 
         checksum = self._block_checksum.read(source)["checksum"]
+        if drf.flags & 0b1 > 0: # Check if checksum is valid
+            drf.checksum = checksum
         source.seek(start_offset)  # reset source to start
 
-        if isinstance(parsed_data, tuple) and len(parsed_data) == 3:
-            # In this case, data is in old-style DataParts format
-            rth, rd, od = parsed_data
-            return DataParts(**dict(zip(DataParts._fields, (drf, rth, rd, od, checksum))))
-
-        # Otherwise, the subclass' representation should just be passed on
         return parsed_data
 
     @classmethod
@@ -158,6 +122,17 @@ class _DataRecord7000(DataRecord):
         return records.SonarSettings(**rth, frame=drf)
 
 
+def _bytes_to_str(dict, keys):
+    """
+    For each key, the corresponding dict value is transformed from 
+    a list of bytes to a string
+    """
+    for key in keys:
+        byte_list = dict[key]
+        termination = byte_list.index(b"\x00")
+        dict[key] = b"".join(byte_list[:termination]).decode("UTF-8")
+
+
 class _DataRecord7200(DataRecord):
 
     _record_type_id = 7200
@@ -171,27 +146,32 @@ class _DataRecord7200(DataRecord):
             elemD_("record_data_size", elemT.u32),
             elemD_("number_of_devices", elemT.u32),
             elemD_("recording_name", elemT.c8, 64),
-            elemD_("recording_prog_ver_num", elemT.c8, 16),
-            elemD_("user_def_name", elemT.c8, 64),
+            elemD_("recording_program_version_number", elemT.c8, 16),
+            elemD_("user_defined_name", elemT.c8, 64),
             elemD_("notes", elemT.c8, 128),
         )
     )
 
     _block_rd_device_type = DataBlock(
-        (elemD_("device_type_id", elemT.u32), elemD_("system_enum_id", elemT.u16))
+        (elemD_("device_ids", elemT.u32), elemD_("system_enumerators", elemT.u16))
     )
 
     _block_od = DataBlock(
         (elemD_("catalog_size", elemT.u32), elemD_("catalog_offset", elemT.u64))
     )
 
-    def _read(self, source: io.RawIOBase, drf:records.DataRecordFrame, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
+        _bytes_to_str(rth,
+            ["recording_name", "recording_program_version_number",
+            "user_defined_name", "notes"])
         rd = self._block_rd_device_type.read(source, rth["number_of_devices"])
         source.seek(start_offset)
         source.seek(drf.optional_data_offset, io.SEEK_CUR)
         od = self._block_od.read(source)
-        return rth, rd, od
+
+        # return rth, rd, od
+        return records.FileHeader(**rth, **rd, **od, frame=drf)
 
 
 class _DataRecord7300(DataRecord):
@@ -202,28 +182,28 @@ class _DataRecord7300(DataRecord):
         (
             elemD_("size", elemT.u32),
             elemD_("version", elemT.u16),
-            elemD_("catalog_size", elemT.u32),
+            elemD_("number_of_records", elemT.u32),
             elemD_(None, elemT.u32),
         )
     )
 
     _block_rd_entry = DataBlock(
         (
-            elemD_("size", elemT.u32),
-            elemD_("offset", elemT.u64),
-            elemD_("record_type_id", elemT.u16),
-            elemD_("device_id", elemT.u16),
-            elemD_("system_enum", elemT.u16),
-            elemD_("time", elemT.u8, 10),
-            elemD_("count", elemT.u32),
+            elemD_("sizes", elemT.u32),
+            elemD_("offsets", elemT.u64),
+            elemD_("record_types", elemT.u16),
+            elemD_("device_ids", elemT.u16),
+            elemD_("system_enumerators", elemT.u16),
+            elemD_("times", elemT.u8, 10),
+            elemD_("record_counts", elemT.u32),
             elemD_(None, elemT.u16, 8),
         )
     )
 
     def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        rd = self._block_rd_entry.read(source, rth["catalog_size"])
-        return rth, rd, None
+        rd = self._block_rd_entry.read(source, rth["number_of_records"])
+        return records.FileCatalog(**rth, **rd, frame=drf)
 
 
 class _DataRecord7004(DataRecord):
@@ -231,35 +211,25 @@ class _DataRecord7004(DataRecord):
 
     _record_type_id = 7004
     _block_rth = DataBlock(
-        (elemD_("sonar_id", elemT.u64), elemD_("n_beams", elemT.u32))
+        (elemD_("sonar_id", elemT.u64), elemD_("number_of_beams", elemT.u32))
     )
 
     def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        n_beams = rth["n_beams"]
+        n_beams = rth["number_of_beams"]
         block_rd = DataBlock(
             (
-                elemD_("vert_angle", elemT.f32, n_beams),
-                elemD_("horz_angle", elemT.f32, n_beams),
-                elemD_("beam_width_y", elemT.f32, n_beams),
-                elemD_("beam_width_x", elemT.f32, n_beams),
-                elemD_("tx_delay", elemT.f32, n_beams),
+                elemD_("vertical_angles", elemT.f32, n_beams),
+                elemD_("horizontal_angles", elemT.f32, n_beams),
+                elemD_("beam_width_ys", elemT.f32, n_beams),
+                elemD_("beam_width_xs", elemT.f32, n_beams),
+                elemD_("tx_delays", elemT.f32, n_beams), # TODO: handle when missing
             )
         )
-        # the dtype becomes rather complex, with the n_beams
-        # dimension embedded into each type. This is inverted
-        # by creating a new structure dtype of 5 scalars. A
-        # new array of size (n_beams,) is created and
-        # scalar data # is copied into it.
-        orig_rd = block_rd.read_dense(source)
-        new_dtype = np.dtype([(n, s) for n, s, *_ in block_rd.numpy_types])
-        rd = np.zeros((n_beams,), dtype=new_dtype)
-        rd["vert_angle"][:] = orig_rd["vert_angle"]
-        rd["horz_angle"][:] = orig_rd["horz_angle"]
-        rd["beam_width_y"][:] = orig_rd["beam_width_y"]
-        rd["beam_width_x"][:] = orig_rd["beam_width_x"]
-        rd["tx_delay"][:] = orig_rd["tx_delay"]
-        return rth, rd, None
+        array_rd = block_rd.read_dense(source)
+        # Convert to dictionary
+        rd = {k[0]: array_rd[k[0]].squeeze() for k in block_rd.numpy_types}
+        return records.BeamGeometry(**rth, **rd, frame=drf)
 
 
 class _DataRecord7010(DataRecord):
@@ -270,19 +240,19 @@ class _DataRecord7010(DataRecord):
         (
             elemD_("sonar_id", elemT.u64),
             elemD_("ping_number", elemT.u32),
-            elemD_("is_multi_ping", elemT.u16),
-            elemD_("sample_count", elemT.u32),
+            elemD_("multi_ping_sequence", elemT.u16),
+            elemD_("number_of_samples", elemT.u32),
             elemD_(None, elemT.u32, 8),
         )
     )
 
-    _block_gain_sample = DataBlock((elemD_("gain", elemT.f32),))
+    _block_gain_sample = DataBlock((elemD_("gains", elemT.f32),))
 
     def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        sample_count = rth["sample_count"]
+        sample_count = rth["number_of_samples"]
         rd = self._block_gain_sample.read_dense(source, sample_count)
-        return rth, rd, None
+        return records.TVG(**rth, gains=rd["gains"], frame=drf)
 
 
 class _DataRecord7018(DataRecord):
@@ -404,7 +374,7 @@ class _DataRecord7038(DataRecord):
             (-1, n_actual_channels)
         )
 
-        return rth, rd_value, None
+        return records.RawIQ(**rth, iq=rd_value, frame=drf)
 
 
 class _DataRecord1003(DataRecord):
@@ -415,20 +385,20 @@ class _DataRecord1003(DataRecord):
         (
             elemD_("datum_id", elemT.u32),
             elemD_("latency", elemT.f32),
-            elemD_("lat", elemT.f64),
-            elemD_("long", elemT.f64),
+            elemD_("latitude_northing", elemT.f64),
+            elemD_("longitude_easting", elemT.f64),
             elemD_("height", elemT.f64),
-            elemD_("pos_type", elemT.u8),
+            elemD_("position_type", elemT.u8),
             elemD_("utm_zone", elemT.u8),
-            elemD_("quality", elemT.u8),
-            elemD_("pos_method", elemT.u8),
-            elemD_("num_sat", elemT.u8),
+            elemD_("quality_flag", elemT.u8),
+            elemD_("positioning_method", elemT.u8),
+            elemD_("number_of_satellites", elemT.u8),
         )
     )
 
     def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        return rth, None, None
+        return records.Position(**rth, frame=drf)
 
 
 class _DataRecord1012(DataRecord):
@@ -445,7 +415,7 @@ class _DataRecord1012(DataRecord):
 
     def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        return rth, None, None
+        return records.RollPitchHeave(**rth, frame=drf)
 
 
 class _DataRecord1013(DataRecord):
@@ -458,7 +428,7 @@ class _DataRecord1013(DataRecord):
         rth = self._block_rth.read(source)
         rd = None  # no rd
         od = None  # no optional data
-        return rth, rd, od
+        return records.Heading(**rth, frame=drf)
 
 
 def record(type_id: int) -> DataRecord:
