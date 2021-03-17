@@ -6,11 +6,23 @@ import abc
 import io
 from collections import namedtuple
 from typing import Any, Dict, Optional
+from xml.etree import ElementTree as ET
 
 import numpy as np
 
 from ._datablock import DataBlock, DRFBlock, elemD_, elemT
 from . import records
+
+
+def _bytes_to_str(dict, keys):
+    """
+    For each key, the corresponding dict value is transformed from 
+    a list of bytes to a string
+    """
+    for key in keys:
+        byte_list = dict[key]
+        termination = byte_list.index(b"\x00")
+        dict[key] = b"".join(byte_list[:termination]).decode("UTF-8")
 
 
 class DataRecord(metaclass=abc.ABCMeta):
@@ -122,15 +134,41 @@ class _DataRecord7000(DataRecord):
         return records.SonarSettings(**rth, frame=drf)
 
 
-def _bytes_to_str(dict, keys):
-    """
-    For each key, the corresponding dict value is transformed from 
-    a list of bytes to a string
-    """
-    for key in keys:
-        byte_list = dict[key]
-        termination = byte_list.index(b"\x00")
-        dict[key] = b"".join(byte_list[:termination]).decode("UTF-8")
+class _DataRecord7001(DataRecord):
+    """ Configuration """
+
+    _record_type_id = 7001
+
+    _block_rth = DataBlock((
+        elemD_('sonar_serial_number', elemT.u64),
+        elemD_('number_of_devices', elemT.u32),
+    ))
+
+    _block_rd_info = DataBlock((
+        elemD_('identifier', elemT.u32),
+        elemD_('description', elemT.c8, 60), # We should parse this better
+        elemD_('alphadata_card', elemT.u32),
+        elemD_('serial_number', elemT.u64),
+        elemD_('info_length', elemT.u32),
+    ))
+
+    def _read(
+            self, source: io.RawIOBase,
+            drf: records.DataRecordFrame,
+            start_offset: int):
+        rth = self._block_rth.read(source)
+
+        rd = []
+        print(rth["number_of_devices"])
+        for _ in range(rth["number_of_devices"]):
+            device_data = self._block_rd_info.read(source)
+            _bytes_to_str(device_data, ["description"])
+            xml_string = source.read(device_data["info_length"])
+            # Indexing removes a weird null-termination
+            device_data["info"] = ET.fromstring(xml_string[:-1])
+            rd.append(records.DeviceConfiguration(**device_data))
+
+        return records.Configuration(**rth, devices=rd, frame=drf)
 
 
 class _DataRecord7200(DataRecord):

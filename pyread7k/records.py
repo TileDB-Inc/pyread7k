@@ -8,6 +8,7 @@ Classes are named after their DFD entry, excluding any redundat "data" or "recor
 Fields are named as closely after DFD as possible, preferring verbose over ambiguous.
 """
 from typing import Optional
+from xml.etree import ElementTree as ET
 import numpy as np
 import datetime
 
@@ -165,6 +166,27 @@ class SonarSettings(BaseRecord):
 
 
 @dataclass
+class DeviceConfiguration:
+    """ Configuration of a single device in a 7001 record """
+    identifier : int
+    description : str
+    alphadata_card : int
+    serial_number : int
+    info_length : int
+    info : ET.ElementTree
+
+
+@dataclass
+class Configuration(BaseRecord):
+    """ Record 7001 """
+    record_type : int = field(default=7001, init=False)
+
+    sonar_serial_number : int
+    number_of_devices : int
+    devices : list[DeviceConfiguration]
+
+
+@dataclass
 class BeamGeometry(BaseRecord):
     """ Record 7004 """
     record_type : int = field(default=7004, init=False)
@@ -274,5 +296,5 @@ class FileCatalog(BaseRecord):
     record_types : list[int]
     device_ids : list[int]
     system_enumerators : list[int]
-    times : list[int]
+    times : list[int] # TODO: Correctly parse
     record_counts : list[int]
