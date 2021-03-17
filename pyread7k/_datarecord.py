@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from ._datablock import DataBlock, DRFBlock, elemD_, elemT
+from . import records
 
 DataPartsBase = namedtuple("DataParts", ("drf", "rth", "rd", "od", "checksum"))
 
@@ -64,10 +65,19 @@ class DataRecord(metaclass=abc.ABCMeta):
         source.seek(start_offset)
         source.seek(4, io.SEEK_CUR)  # to sync pattern
         source.seek(drf.offset, io.SEEK_CUR)
-        rth, rd, od = self._read(source, drf, start_offset)
+
+        parsed_data = self._read(source, drf, start_offset)
+
         checksum = self._block_checksum.read(source)["checksum"]
         source.seek(start_offset)  # reset source to start
-        return DataParts(**dict(zip(DataParts._fields, (drf, rth, rd, od, checksum))))
+
+        if isinstance(parsed_data, tuple) and len(parsed_data) == 3:
+            # In this case, data is in old-style DataParts format
+            rth, rd, od = parsed_data
+            return DataParts(**dict(zip(DataParts._fields, (drf, rth, rd, od, checksum))))
+
+        # Otherwise, the subclass' representation should just be passed on
+        return parsed_data
 
     @classmethod
     def instance(cls, record_type_id: int):
@@ -79,7 +89,7 @@ class DataRecord(metaclass=abc.ABCMeta):
         return cls.implemented.get(record_type_id, None)
 
     @abc.abstractmethod
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         # returns iterable of dicts:
         #    0: tuple of rth values (required)
         #    1: rd values (if not available, return None)
@@ -102,40 +112,40 @@ class _DataRecord7000(DataRecord):
         (
             elemD_("sonar_id", elemT.u64),
             elemD_("ping_number", elemT.u32),
-            elemD_("is_multi_ping", elemT.u16),
-            elemD_("freq", elemT.f32),
+            elemD_("multi_ping_sequence", elemT.u16),
+            elemD_("frequency", elemT.f32),
             elemD_("sample_rate", elemT.f32),
-            elemD_("recv_bandwidth", elemT.f32),
+            elemD_("receiver_bandwidth", elemT.f32),
             elemD_("tx_pulse_width", elemT.f32),
             elemD_("tx_pulse_type_id", elemT.u32),
-            elemD_("tx_pulse_env_id", elemT.u32),
-            elemD_("tx_pulse_env_param", elemT.f32),
+            elemD_("tx_pulse_envelope_id", elemT.u32),
+            elemD_("tx_pulse_envelope_parameter", elemT.f32),
             elemD_("tx_pulse_mode", elemT.u16),
             elemD_(None, elemT.u16),
             elemD_("max_ping_rate", elemT.f32),
             elemD_("ping_period", elemT.f32),
-            elemD_("range", elemT.f32),
-            elemD_("power", elemT.f32),
-            elemD_("gain", elemT.f32),
-            elemD_("ctrl_flags", elemT.u32),
-            elemD_("proj_id", elemT.u32),
-            elemD_("proj_beam_ang_vert", elemT.f32),
-            elemD_("proj_beam_ang_horz", elemT.f32),
-            elemD_("proj_beam_width_vert", elemT.f32),
-            elemD_("proj_beam_width_horz", elemT.f32),
-            elemD_("proj_beam_focal_point", elemT.f32),
-            elemD_("proj_beam_weight_win_type", elemT.u32),
-            elemD_("proj_beam_weight_win_param", elemT.f32),
-            elemD_("tx_flags", elemT.u32),
+            elemD_("range_selection", elemT.f32),
+            elemD_("power_selection", elemT.f32),
+            elemD_("gain_selection", elemT.f32),
+            elemD_("control_flags", elemT.u32),
+            elemD_("projector_id", elemT.u32),
+            elemD_("projector_beam_angle_vertical", elemT.f32),
+            elemD_("projector_beam_angle_horizontal", elemT.f32),
+            elemD_("projector_beam_width_vertical", elemT.f32),
+            elemD_("projector_beam_width_horizontal", elemT.f32),
+            elemD_("projector_beam_focal_point", elemT.f32),
+            elemD_("projector_beam_weighting_window_type", elemT.u32),
+            elemD_("projector_beam_weighting_window_parameter", elemT.f32),
+            elemD_("transmit_flags", elemT.u32),
             elemD_("hydrophone_id", elemT.u32),
-            elemD_("recv_beam_weight_win", elemT.u32),
-            elemD_("recv_beam_weight_param", elemT.f32),
-            elemD_("rx_flags", elemT.u32),
-            elemD_("recv_beam_width", elemT.f32),
-            elemD_("bottom_detect_info_0", elemT.f32),
-            elemD_("bottom_detect_info_1", elemT.f32),
-            elemD_("bottom_detect_info_2", elemT.f32),
-            elemD_("bottom_detect_info_3", elemT.f32),
+            elemD_("receive_beam_weighting_window", elemT.u32),
+            elemD_("receive_beam_weighting_parameter", elemT.f32),
+            elemD_("receive_flags", elemT.u32),
+            elemD_("receive_beam_width", elemT.f32),
+            elemD_("bottom_detection_filter_min_range", elemT.f32),
+            elemD_("bottom_detection_filter_max_range", elemT.f32),
+            elemD_("bottom_detection_filter_min_depth", elemT.f32),
+            elemD_("bottom_detection_filter_max_depth", elemT.f32),
             elemD_("absorption", elemT.f32),
             elemD_("sound_velocity", elemT.f32),
             elemD_("spreading", elemT.f32),
@@ -143,9 +153,9 @@ class _DataRecord7000(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        return rth, None, None
+        return records.SonarSettings(**rth, frame=drf)
 
 
 class _DataRecord7200(DataRecord):
@@ -175,11 +185,11 @@ class _DataRecord7200(DataRecord):
         (elemD_("catalog_size", elemT.u32), elemD_("catalog_offset", elemT.u64))
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf:records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         rd = self._block_rd_device_type.read(source, rth["number_of_devices"])
         source.seek(start_offset)
-        source.seek(drf.od_offset, io.SEEK_CUR)
+        source.seek(drf.optional_data_offset, io.SEEK_CUR)
         od = self._block_od.read(source)
         return rth, rd, od
 
@@ -210,7 +220,7 @@ class _DataRecord7300(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         rd = self._block_rd_entry.read(source, rth["catalog_size"])
         return rth, rd, None
@@ -224,7 +234,7 @@ class _DataRecord7004(DataRecord):
         (elemD_("sonar_id", elemT.u64), elemD_("n_beams", elemT.u32))
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         n_beams = rth["n_beams"]
         block_rd = DataBlock(
@@ -268,7 +278,7 @@ class _DataRecord7010(DataRecord):
 
     _block_gain_sample = DataBlock((elemD_("gain", elemT.f32),))
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         sample_count = rth["sample_count"]
         rd = self._block_gain_sample.read_dense(source, sample_count)
@@ -284,22 +294,23 @@ class _DataRecord7018(DataRecord):
             elemD_("sonar_id", elemT.u64),
             elemD_("ping_number", elemT.u32),
             elemD_("is_multi_ping", elemT.u16),
-            elemD_("n_beams", elemT.u16),
-            elemD_("n_samples", elemT.u32),
+            elemD_("number_of_beams", elemT.u16),
+            elemD_("number_of_samples", elemT.u32),
             elemD_(None, elemT.u32, 8),
         )
     )
 
     _block_rd_amp_phs = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
-        n_samples = rth["n_samples"]
-        n_beams = rth["n_beams"]
+        n_samples = rth["number_of_samples"]
+        n_beams = rth["number_of_beams"]
         count = n_samples * n_beams
         rd = self._block_rd_amp_phs.read_dense(source, count)
         rd = rd.reshape((n_samples, n_beams))
-        return rth, rd, None
+
+        return records.Beamformed(**rth, amplitudes=rd["amp"], phases=rd["phs"], frame=drf)
 
 
 class _DataRecord7038(DataRecord):
@@ -327,7 +338,7 @@ class _DataRecord7038(DataRecord):
 
     _block_rd_data_u16 = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
 
         n_actual_channels = rth["n_actual_channels"]
@@ -415,7 +426,7 @@ class _DataRecord1003(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         return rth, None, None
 
@@ -432,7 +443,7 @@ class _DataRecord1012(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         return rth, None, None
 
@@ -443,7 +454,7 @@ class _DataRecord1013(DataRecord):
     _record_type_id = 1013
     _block_rth = DataBlock((elemD_("heading", elemT.f32),))
 
-    def _read(self, source: io.RawIOBase, drf: DRFBlock.DRF, start_offset: int):
+    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
         rth = self._block_rth.read(source)
         rd = None  # no rd
         od = None  # no optional data

@@ -20,7 +20,7 @@ from typing import List, Optional, Union
 import numpy as np
 import geopy
 
-from . import _datarecord
+from . import _datarecord, records
 from ._datarecord import DataParts
 from ._utils import (
     get_record_offsets,
@@ -181,7 +181,7 @@ class Ping:
 
     def __init__(
         self,
-        settings_record: DataParts,
+        settings_record: records.SonarSettings,
         settings_offset: int,
         next_record,
         next_offset: int,
@@ -189,8 +189,8 @@ class Ping:
     ):
 
         # This is the only record always in-memory, as it defines the ping.
-        self.sonar_settings: DataParts = settings_record
-        self.ping_number: int = settings_record.header["ping_number"]
+        self.sonar_settings: records.SonarSettings = settings_record
+        self.ping_number: int = settings_record.ping_number
 
         self._manager = manager
         self._own_offset = settings_offset  # This ping's start offset
@@ -208,7 +208,7 @@ class Ping:
         )
 
     def __str__(self) -> str:
-        return "<Ping %i>" % self.sonar_settings.header["ping_number"]
+        return "<Ping %i>" % self.sonar_settings.ping_number
 
     def minimize_memory(self) -> None:
         """
@@ -234,9 +234,13 @@ class Ping:
         if offset is None:
             return None
         record = self._manager.read_record(record_type, offset)
-        if "ping_number" in record.header:
-            # If record contains ping number, we double-check validity
+
+        # If record contains ping number, we double-check validity
+        if hasattr(record, "header") and "ping_number" in record.header:
             assert record.header["ping_number"] == self.ping_number
+        elif hasattr(record, "ping_number"):
+            assert record.ping_number == self.ping_number
+
         return record
 
     @cached_property
@@ -304,7 +308,7 @@ class Ping:
     def receiver_motion_for_sample(self, sample: int):
         """ Find the most appropriate motion data for a sample based on time """
         time = self.sonar_settings.frame.time + timedelta(
-            seconds=sample / self.sonar_settings.header["sample_rate"]
+            seconds=sample / self.sonar_settings.sample_rate
         )
         max_rph_idx = len(self.roll_pitch_heave_set) - 1
         max_h_idx = len(self.heading_set) - 1

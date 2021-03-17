@@ -8,6 +8,7 @@ import struct
 from collections import defaultdict, namedtuple
 
 import numpy as np
+from . import records
 
 _ElementTypes = namedtuple(
     "_ElementTypes",
@@ -151,8 +152,8 @@ DRF_PRIMITIVE_FIELDS = (
     "offset",
     "sync_pattern",
     "size",
-    "od_offset",
-    "od_id",
+    "optional_data_offset",
+    "optional_data_id",
     # The DFD is mistaken, time is NOT u8 * 10. Needs special handling.
     "time_year",
     "time_day",
@@ -162,10 +163,8 @@ DRF_PRIMITIVE_FIELDS = (
     "record_version",
     "record_type_id",
     "device_id",
-    "system_enum",
+    "system_enumerator",
     "flags",
-    "total_records_frag",
-    "frag_number",
 )
 
 # Removes partial time fields, and adds a proper time field.
@@ -179,8 +178,6 @@ class DRFBlock(DataBlock):
     Reads a Data Record Frame from binary data.
     Specified in the Teledyne Reson Data Format Definition.
     """
-
-    DRF = namedtuple("DRF", DRF_REFINED_FIELDS)
 
     def __init__(self):
         elements = tuple(
@@ -207,8 +204,8 @@ class DRFBlock(DataBlock):
                     ((elemT.u16,), None),
                     (None, (elemT.u16,)),
                     (None, (elemT.u32,)),
-                    ((elemT.u32,), None),
-                    ((elemT.u32,), None),
+                    (None, (elemT.u32,)),
+                    (None, (elemT.u32,)),
                 ),
                 names=DRF_PRIMITIVE_FIELDS,
             )
@@ -237,4 +234,4 @@ class DRFBlock(DataBlock):
         del init_data["time_minutes"]
         del init_data["time_seconds"]
 
-        return self.DRF(**init_data)
+        return records.DataRecordFrame(**init_data)

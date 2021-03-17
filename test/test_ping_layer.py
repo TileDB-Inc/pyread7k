@@ -42,8 +42,8 @@ def test_dataset_memory_use(dataset):
         p.position_set
         p.roll_pitch_heave_set
         p.heading_set
-        p.beamformed.data
-        p.beam_geometry.data
+        p.beamformed
+        p.beam_geometry
         p.raw_iq
 
     # Check whether accessing all of the data of the pings resulted
