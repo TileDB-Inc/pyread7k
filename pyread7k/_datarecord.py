@@ -10,13 +10,13 @@ from xml.etree import ElementTree as ET
 
 import numpy as np
 
-from ._datablock import DataBlock, DRFBlock, elemD_, elemT
 from . import records
+from ._datablock import DataBlock, DRFBlock, elemD_, elemT
 
 
 def _bytes_to_str(dict, keys):
     """
-    For each key, the corresponding dict value is transformed from 
+    For each key, the corresponding dict value is transformed from
     a list of bytes to a string
     """
     for key in keys:
@@ -49,7 +49,7 @@ class DataRecord(metaclass=abc.ABCMeta):
         parsed_data = self._read(source, drf, start_offset)
 
         checksum = self._block_checksum.read(source)["checksum"]
-        if drf.flags & 0b1 > 0: # Check if checksum is valid
+        if drf.flags & 0b1 > 0:  # Check if checksum is valid
             drf.checksum = checksum
         source.seek(start_offset)  # reset source to start
 
@@ -65,7 +65,9 @@ class DataRecord(metaclass=abc.ABCMeta):
         return cls.implemented.get(record_type_id, None)
 
     @abc.abstractmethod
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         # returns iterable of dicts:
         #    0: tuple of rth values (required)
         #    1: rd values (if not available, return None)
@@ -129,7 +131,9 @@ class _DataRecord7000(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         return records.SonarSettings(**rth, frame=drf)
 
@@ -139,23 +143,26 @@ class _DataRecord7001(DataRecord):
 
     _record_type_id = 7001
 
-    _block_rth = DataBlock((
-        elemD_('sonar_serial_number', elemT.u64),
-        elemD_('number_of_devices', elemT.u32),
-    ))
+    _block_rth = DataBlock(
+        (
+            elemD_("sonar_serial_number", elemT.u64),
+            elemD_("number_of_devices", elemT.u32),
+        )
+    )
 
-    _block_rd_info = DataBlock((
-        elemD_('identifier', elemT.u32),
-        elemD_('description', elemT.c8, 60), # We should parse this better
-        elemD_('alphadata_card', elemT.u32),
-        elemD_('serial_number', elemT.u64),
-        elemD_('info_length', elemT.u32),
-    ))
+    _block_rd_info = DataBlock(
+        (
+            elemD_("identifier", elemT.u32),
+            elemD_("description", elemT.c8, 60),  # We should parse this better
+            elemD_("alphadata_card", elemT.u32),
+            elemD_("serial_number", elemT.u64),
+            elemD_("info_length", elemT.u32),
+        )
+    )
 
     def _read(
-            self, source: io.RawIOBase,
-            drf: records.DataRecordFrame,
-            start_offset: int):
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
 
         rd = []
@@ -198,11 +205,19 @@ class _DataRecord7200(DataRecord):
         (elemD_("catalog_size", elemT.u32), elemD_("catalog_offset", elemT.u64))
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
-        _bytes_to_str(rth,
-            ["recording_name", "recording_program_version_number",
-            "user_defined_name", "notes"])
+        _bytes_to_str(
+            rth,
+            [
+                "recording_name",
+                "recording_program_version_number",
+                "user_defined_name",
+                "notes",
+            ],
+        )
         rd = self._block_rd_device_type.read(source, rth["number_of_devices"])
         source.seek(start_offset)
         source.seek(drf.optional_data_offset, io.SEEK_CUR)
@@ -238,7 +253,9 @@ class _DataRecord7300(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         rd = self._block_rd_entry.read(source, rth["number_of_records"])
         return records.FileCatalog(**rth, **rd, frame=drf)
@@ -252,7 +269,9 @@ class _DataRecord7004(DataRecord):
         (elemD_("sonar_id", elemT.u64), elemD_("number_of_beams", elemT.u32))
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         n_beams = rth["number_of_beams"]
         block_rd = DataBlock(
@@ -261,7 +280,7 @@ class _DataRecord7004(DataRecord):
                 elemD_("horizontal_angles", elemT.f32, n_beams),
                 elemD_("beam_width_ys", elemT.f32, n_beams),
                 elemD_("beam_width_xs", elemT.f32, n_beams),
-                elemD_("tx_delays", elemT.f32, n_beams), # TODO: handle when missing
+                elemD_("tx_delays", elemT.f32, n_beams),  # TODO: handle when missing
             )
         )
         array_rd = block_rd.read_dense(source)
@@ -286,7 +305,9 @@ class _DataRecord7010(DataRecord):
 
     _block_gain_sample = DataBlock((elemD_("gains", elemT.f32),))
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         sample_count = rth["number_of_samples"]
         rd = self._block_gain_sample.read_dense(source, sample_count)
@@ -310,7 +331,9 @@ class _DataRecord7018(DataRecord):
 
     _block_rd_amp_phs = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         n_samples = rth["number_of_samples"]
         n_beams = rth["number_of_beams"]
@@ -318,7 +341,9 @@ class _DataRecord7018(DataRecord):
         rd = self._block_rd_amp_phs.read_dense(source, count)
         rd = rd.reshape((n_samples, n_beams))
 
-        return records.Beamformed(**rth, amplitudes=rd["amp"], phases=rd["phs"], frame=drf)
+        return records.Beamformed(
+            **rth, amplitudes=rd["amp"], phases=rd["phs"], frame=drf
+        )
 
 
 class _DataRecord7038(DataRecord):
@@ -346,7 +371,9 @@ class _DataRecord7038(DataRecord):
 
     _block_rd_data_u16 = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
 
         n_actual_channels = rth["n_actual_channels"]
@@ -434,7 +461,9 @@ class _DataRecord1003(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         return records.Position(**rth, frame=drf)
 
@@ -451,7 +480,9 @@ class _DataRecord1012(DataRecord):
         )
     )
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         return records.RollPitchHeave(**rth, frame=drf)
 
@@ -462,7 +493,9 @@ class _DataRecord1013(DataRecord):
     _record_type_id = 1013
     _block_rth = DataBlock((elemD_("heading", elemT.f32),))
 
-    def _read(self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int):
+    def _read(
+        self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
+    ):
         rth = self._block_rth.read(source)
         rd = None  # no rd
         od = None  # no optional data

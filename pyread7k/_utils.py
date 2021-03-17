@@ -2,8 +2,8 @@ import csv
 import io
 
 from . import records
-from .records import FileHeader, FileCatalog
 from ._datarecord import record as _record
+from .records import FileCatalog, FileHeader
 
 __all__ = [
     "read_file_header",

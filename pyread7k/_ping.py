@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 This module is an abstraction on top of the low-level 7k records, which allows
 the user to work in terms of "pings" with associated data, instead of thinking
@@ -13,13 +14,12 @@ Expected order of records for a ping:
 import gc
 import math
 from datetime import timedelta
-
 from enum import Enum
 from functools import cached_property as cached_property_functools
 from typing import List, Optional, Union
 
-import numpy as np
 import geopy
+import numpy as np
 
 from . import _datarecord, records
 from ._utils import (
@@ -73,7 +73,6 @@ class Manager7k:
         record_offsets = self._offsets_for_type[7001]
         assert len(record_offsets) == 1
         return self.read_record(7001, record_offsets[0])
-
 
     def get_next_record(self, record_type, offset_start, offset_end):
         """

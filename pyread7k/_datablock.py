@@ -8,6 +8,7 @@ import struct
 from collections import defaultdict, namedtuple
 
 import numpy as np
+
 from . import records
 
 _ElementTypes = namedtuple(
