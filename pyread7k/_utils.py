@@ -17,16 +17,19 @@ __all__ = [
 
 
 def read_file_header(source: io.RawIOBase) -> FileHeader:
+    """ Read the file header 7200 record """
     return _record(7200).read(source)
 
 
 def read_file_catalog(source: io.RawIOBase, file_header: FileHeader) -> FileCatalog:
+    """ Read the file catalog 7300 record """
     source.seek(file_header.catalog_offset)
     file_catalog: FileCatalog = _record(7300).read(source)
     return file_catalog
 
 
 def get_record_offsets(type_id: int, file_catalog: FileCatalog) -> tuple:
+    """ Get offsets to all records of given type_id from the catalog """
 
     cat_zip = zip(file_catalog.offsets, file_catalog.record_types)
 
@@ -34,6 +37,7 @@ def get_record_offsets(type_id: int, file_catalog: FileCatalog) -> tuple:
 
 
 def get_record_count(type_id: int, file_catalog: FileCatalog) -> int:
+    """ Count number of records of given type in the catalog """
     return len(get_record_offsets(type_id, file_catalog))
 
 
@@ -45,7 +49,7 @@ def gen_records(
     first_idx=0,
     count=None,
 ):
-
+    """ Generator reading records of the given type from the file """
     start_offset = source.tell()
     cat_offsets = get_record_offsets(type_id, file_catalog)
     if first_idx > 0:
@@ -68,6 +72,7 @@ def read_records(
     first_idx=0,
     count=None,
 ) -> records.BaseRecord:
+    """ Read all records of the given type from the file """
 
     return tuple(
         gen_records(type_id, source, file_catalog, first_idx=first_idx, count=count)
@@ -75,6 +80,7 @@ def read_records(
 
 
 def export_catalog(filename: str, file_catalog: FileCatalog):
+    """ Write the catalog to a file in csv format """
 
     with open(filename, "w", newline="") as csvfile:
         writer = csv.writer(
