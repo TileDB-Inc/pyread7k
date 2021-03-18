@@ -16,7 +16,6 @@ pip install git+https://github.com/Teledyne-Marine/pyread7k.git
 
 
 # Getting started
-// Første gang test med "poetry run pytest -s"
 Working with the pyread7k library is quite intuitive, and given that you have a s7k file, you can load a dataset using the PingDataset class:
 ```python
 import pyread7k
