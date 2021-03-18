@@ -5,7 +5,7 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 
 from pyread7k import Ping, PingDataset, PingType
-from pyread7k.processing._ping_processing import BFProcessing
+from pyread7k.processing import BFProcessing
 
 load_dotenv(find_dotenv())
 
