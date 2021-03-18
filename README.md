@@ -38,7 +38,7 @@ for ping in dataset:
 Much of the processing functionality currently implemented is geared towards
 beamformed data, but Beamforming is in the backlog, so that s7k files with only IQ data can be processed as well.
 
-The processing module contains code to process pings in a variety of ways. These processing functions are grouped into an object called Beamformed, which when instantiated will allow you to process beamformed pings like so:
+The processing module contains code to process pings in a variety of ways. These processing functions are grouped into an object called BFProcessing, which when instantiated will allow you to process beamformed pings like so:
 
 ```python
 # Excluding ranges or beams

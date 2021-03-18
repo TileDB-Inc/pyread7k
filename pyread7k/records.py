@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Class definitions for Data Format Definition records.
 Records returned by the pyread7k API are of these types, NOT of _datarecord types.
@@ -8,6 +6,8 @@ Naming conventions:
 Classes are named after their DFD entry, excluding any redundat "data" or "record" endings.
 Fields are named as closely after DFD as possible, preferring verbose over ambiguous.
 """
+from __future__ import annotations
+
 import datetime
 from dataclasses import dataclass, field
 from typing import Optional

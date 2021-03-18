@@ -5,7 +5,7 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 
 from pyread7k import Ping, PingDataset, PingType
-from pyread7k.processing._ping_processing import Beamformed
+from pyread7k.processing._ping_processing import BFProcessing
 
 load_dotenv(find_dotenv())
 
@@ -26,7 +26,7 @@ def test_read_s7kfile(pingdataset: PingDataset):
 
 def test_range_exclusion(ping: Ping):
     # Min exclusion
-    p = Beamformed(ping)
+    p = BFProcessing(ping)
     original_shape = p.shape
     p.exclude_ranges(min_range_meter=50)
     assert p.ranges.min() >= 50
