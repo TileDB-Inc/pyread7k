@@ -69,7 +69,7 @@ class Manager7k:
             initializer=lambda key: get_record_offsets(key, self.file_catalog)
         )
 
-    def get_configuration_record(self):
+    def get_configuration_record(self) -> records.Configuration:
         record_offsets = self._offsets_for_type[7001]
         assert len(record_offsets) == 1
         return self.read_record(7001, record_offsets[0])
@@ -264,7 +264,7 @@ class Ping:
         )
 
     @cached_property
-    def configuration(self):
+    def configuration(self) -> records.Configuration:
         """ Returns the 7001 record, which is shared for all pings in a file """
         return self._manager.get_configuration_record()
 
