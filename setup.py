@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pyread7k",
-    version="0.0.3",
+    version="1.0.0",
     author="Rasmus Klett Mortensen",
     author_email="rasmus.mortensen@teledyne.com",
     description="Reading 7k files",
