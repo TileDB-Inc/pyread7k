@@ -13,10 +13,10 @@ dataset = PingDataset(path, include=PingType.BEAMFORMED)
 ping = dataset[40]  # Arbitrarily chosen
 
 # Simple range and tvg compensation
-gain_transform = np.arange(ping.tvg.data["gain"].shape[0]) ** 3 / 10 ** (
-    ping.tvg.data["gain"] / 20
+gain_transform = np.arange(ping.tvg.gains.shape[0]) ** 3 / 10 ** (
+    ping.tvg.gains / 20
 )
-compensated_amp = ping.beamformed.data["amp"] * gain_transform[:, None]
+compensated_amp = ping.beamformed.amplitudes * gain_transform[:, None]
 
 # Find max intensity
 point_range, point_beam = np.unravel_index(
@@ -24,11 +24,11 @@ point_range, point_beam = np.unravel_index(
 )
 
 # Translate indices to real-world metrics
-point_direction = ping.beam_geometry.data["horz_angle"][point_beam]
+point_direction = ping.beam_geometry.horizontal_angles[point_beam]
 point_distance = (
     point_range
-    * ping.sonar_settings.header["sound_velocity"]
-    / ping.sonar_settings.header["freq"]
+    * ping.sonar_settings.sound_velocity
+    / ping.sonar_settings.frequency
 )
 
 print(

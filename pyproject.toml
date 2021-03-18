@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyread7k"
-version = "0.1.0"
+version = "1.0.0"
 description = "Python library to handle parsing and processing of s7k files"
 authors = ["Rógvi Dávid Arge <rda@flowtale.ai>", "Rasmus Klett Mortensen <rasmus.mortensen@teledyne.com>"]
 license = "Teledyne"

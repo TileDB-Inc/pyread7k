@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 This module is an abstraction on top of the low-level 7k records, which allows
 the user to work in terms of "pings" with associated data, instead of thinking
@@ -12,22 +14,32 @@ Expected order of records for a ping:
 import gc
 import math
 from datetime import timedelta
-
 from enum import Enum
-from functools import cached_property
+from functools import cached_property as cached_property_functools
 from typing import List, Optional, Union
 
-import numpy as np
 import geopy
+import numpy as np
 
-from . import _datarecord
-from ._datarecord import DataParts
+from . import _datarecord, records
 from ._utils import (
     get_record_offsets,
     read_file_catalog,
     read_file_header,
     read_records,
 )
+
+
+def cached_property(func):
+    """
+    Fix functools.cached_property using decorator.decorator to preserve
+    docstrings and name.
+    Note that it does not properly preserve type hints!
+    """
+    cached_f = cached_property_functools(func)
+    cached_f.__name__ = func.__name__
+    cached_f.__doc__ = func.__doc__
+    return cached_f
 
 
 class LazyMap(dict):
@@ -57,11 +69,10 @@ class Manager7k:
             initializer=lambda key: get_record_offsets(key, self.file_catalog)
         )
 
-    def get_configuration_record(self):
+    def get_configuration_record(self) -> records.Configuration:
         record_offsets = self._offsets_for_type[7001]
         assert len(record_offsets) == 1
         return self.read_record(7001, record_offsets[0])
-
 
     def get_next_record(self, record_type, offset_start, offset_end):
         """
@@ -169,7 +180,7 @@ class Ping:
 
     def __init__(
         self,
-        settings_record: DataParts,
+        settings_record: records.SonarSettings,
         settings_offset: int,
         next_record,
         next_offset: int,
@@ -177,8 +188,8 @@ class Ping:
     ):
 
         # This is the only record always in-memory, as it defines the ping.
-        self.sonar_settings: DataParts = settings_record
-        self.ping_number: int = settings_record.header["ping_number"]
+        self.sonar_settings: records.SonarSettings = settings_record
+        self.ping_number: int = settings_record.ping_number
 
         self._manager = manager
         self._own_offset = settings_offset  # This ping's start offset
@@ -196,7 +207,7 @@ class Ping:
         )
 
     def __str__(self) -> str:
-        return "<Ping %i>" % self.sonar_settings.header["ping_number"]
+        return "<Ping %i>" % self.sonar_settings.ping_number
 
     def minimize_memory(self) -> None:
         """
@@ -222,44 +233,48 @@ class Ping:
         if offset is None:
             return None
         record = self._manager.read_record(record_type, offset)
-        if "ping_number" in record.header:
-            # If record contains ping number, we double-check validity
+
+        # If record contains ping number, we double-check validity
+        if hasattr(record, "header") and "ping_number" in record.header:
             assert record.header["ping_number"] == self.ping_number
+        elif hasattr(record, "ping_number"):
+            assert record.ping_number == self.ping_number
+
         return record
 
     @cached_property
-    def position_set(self) -> List[DataParts]:
+    def position_set(self) -> list[records.Position]:
         """ Returns all 1003 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1003, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
         )
 
     @cached_property
-    def roll_pitch_heave_set(self) -> List[DataParts]:
+    def roll_pitch_heave_set(self) -> list[records.RollPitchHeave]:
         """ Returns all 1012 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1012, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
         )
 
     @cached_property
-    def heading_set(self) -> List[DataParts]:
+    def heading_set(self) -> list[records.Heading]:
         """ Returns all 1013 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1013, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
         )
 
     @cached_property
-    def configuration(self) -> DataParts:
-        """ Returns the 7001 record, which shared for all pings in a file """
+    def configuration(self) -> records.Configuration:
+        """ Returns the 7001 record, which is shared for all pings in a file """
         return self._manager.get_configuration_record()
 
     @cached_property
-    def beam_geometry(self) -> Optional[DataParts]:
+    def beam_geometry(self) -> Optional[records.BeamGeometry]:
         """ Returns 7004 record """
         return self._get_single_associated_record(7004)
 
     @cached_property
-    def tvg(self) -> Optional[DataParts]:
+    def tvg(self) -> Optional[records.TVG]:
         """ Returns 7010 record """
         return self._get_single_associated_record(7010)
 
@@ -269,7 +284,7 @@ class Ping:
         return self._offset_map[7018] is not None
 
     @cached_property
-    def beamformed(self) -> Optional[DataParts]:
+    def beamformed(self) -> Optional[records.Beamformed]:
         """ Returns 7018 record """
         return self._get_single_associated_record(7018)
 
@@ -279,20 +294,20 @@ class Ping:
         return self._offset_map[7038] is not None
 
     @cached_property
-    def raw_iq(self) -> Optional[DataParts]:
+    def raw_iq(self) -> Optional[records.RawIQ]:
         """ Returns 7038 record """
         return self._get_single_associated_record(7038)
 
     @cached_property
     def gps_position(self):
-        lat = self.position_set[0].header["lat"] * 180 / np.pi
-        long = self.position_set[0].header["long"] * 180 / np.pi
+        lat = self.position_set[0].latitude * 180 / np.pi
+        long = self.position_set[0].longitude * 180 / np.pi
         return geopy.Point(lat, long)
 
     def receiver_motion_for_sample(self, sample: int):
         """ Find the most appropriate motion data for a sample based on time """
         time = self.sonar_settings.frame.time + timedelta(
-            seconds=sample / self.sonar_settings.header["sample_rate"]
+            seconds=sample / self.sonar_settings.sample_rate
         )
         max_rph_idx = len(self.roll_pitch_heave_set) - 1
         max_h_idx = len(self.heading_set) - 1
