@@ -21,7 +21,7 @@ def get_current_memory():
 
 
 @pytest.fixture
-def dataset():
+def dataset() -> PingDataset:
     return PingDataset(bf_filepath, include=PingType.BEAMFORMED)
 
 
@@ -34,10 +34,22 @@ def test_sonar_settings_time(dataset):
     for p in dataset:
         assert isinstance(p.sonar_settings.frame.time, datetime.datetime)
 
-
-def test_dataset_memory_use(dataset):
-    init_memory = get_current_memory()
+def test_can_loop_multiple_times(dataset: PingDataset):
+    loop1count = 0
     for p in dataset:
+        p.position_set
+        loop1count += 1
+
+    loop2count = 0
+    for p in dataset:
+        p.position_set
+        loop2count += 1
+
+    assert loop1count == loop2count
+
+def test_dataset_memory_use(dataset: PingDataset):
+    init_memory = get_current_memory()
+    for i, p in enumerate(dataset):
         # Make some ping calls to load data into the cached properties
         p.position_set
         p.roll_pitch_heave_set
