@@ -381,6 +381,10 @@ class PingDataset:
     def __len__(self) -> int:
         return len(self.pings)
 
+    def __iter__(self) -> Ping:
+        for ping in self.pings:
+            yield ping
+
     def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
         if isinstance(index, int):
             return self.pings[index]
