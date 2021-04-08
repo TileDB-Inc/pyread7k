@@ -16,7 +16,7 @@ import math
 from datetime import timedelta
 from enum import Enum
 from functools import cached_property as cached_property_functools
-from typing import List, Optional, Union
+from typing import List, Optional, Union, overload
 
 import geopy
 import numpy as np
@@ -381,8 +381,12 @@ class PingDataset:
     def __len__(self) -> int:
         return len(self.pings)
 
-    def __getitem__(self, index: slice) -> Union[Ping, List[Ping]]:
-        return self.pings[index]
+    def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
+        if isinstance(index, int):
+            return self.pings[index]
+        elif isinstance(index, slice):
+            return self.pings[index]
+
 
 
 class ConcatDataset:
