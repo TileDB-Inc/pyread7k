@@ -1,4 +1,3 @@
-from enum import Enum
 from typing import Optional, Union
 
 import matplotlib.pyplot as plt

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 This module is an abstraction on top of the low-level 7k records, which allows
 the user to work in terms of "pings" with associated data, instead of thinking
@@ -243,21 +241,21 @@ class Ping:
         return record
 
     @cached_property
-    def position_set(self) -> list[records.Position]:
+    def position_set(self) -> List[records.Position]:
         """ Returns all 1003 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1003, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
         )
 
     @cached_property
-    def roll_pitch_heave_set(self) -> list[records.RollPitchHeave]:
+    def roll_pitch_heave_set(self) -> List[records.RollPitchHeave]:
         """ Returns all 1012 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1012, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
         )
 
     @cached_property
-    def heading_set(self) -> list[records.Heading]:
+    def heading_set(self) -> List[records.Heading]:
         """ Returns all 1013 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
             1013, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
@@ -389,7 +387,8 @@ class PingDataset:
             return self.pings[index]
         elif isinstance(index, slice):
             return self.pings[index]
-
+        else:
+            raise TypeError("Expected either int or slice, not {0}".format(type(index)))
 
 
 class ConcatDataset:
