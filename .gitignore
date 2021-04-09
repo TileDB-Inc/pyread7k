@@ -27,3 +27,9 @@ events.out.tfevents.*
 
 # .env files
 .env
+
+# Tox directories
+.tox
+
+# Coverage
+.coverage
