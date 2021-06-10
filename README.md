@@ -1,3 +1,6 @@
+[![Teledyne Logo](images/TeledyneLogo.png)](teledynemarine.com)
+
+
 # Pyread7k
 Pyread7k is a library for reading 7k files. It provides a high-level interface to the data in a file, with an API that is a compromise between being ergonomic, while still being easy to correllate with the Data Format Definition.
 
