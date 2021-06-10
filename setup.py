@@ -23,7 +23,7 @@ setuptools.setup(
         "scipy==1.6.0",
         "geopy==2.1.0",
         "scikit-image==0.18.1",
-        "numba==0.52.0",
+        "numba==0.53.0",
     ],
     python_requires=">=3.6",
 )
