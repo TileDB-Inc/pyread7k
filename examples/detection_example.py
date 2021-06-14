@@ -8,7 +8,7 @@ import numpy as np
 from pyread7k import ConcatDataset, PingDataset, PingType
 
 # Setup dataset
-path = "/home/localadmin/sonar_data/2020-06-03_F50_Wreck_seabed_target_Raw_and_beamformed/Port_200kHz_CW_125m_E/20200603_130905.s7k"
+path = "<path to s7k file>.s7k"
 dataset = PingDataset(path, include=PingType.BEAMFORMED)
 ping = dataset[40]  # Arbitrarily chosen
 
