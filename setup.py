@@ -6,12 +6,11 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="pyread7k",
     version="1.0.0",
-    author="Rasmus Klett Mortensen",
-    author_email="rasmus.mortensen@teledyne.com",
+    author="Teledyne RESON",
     description="Reading 7k files",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://rot-bitbucket/projects/CB7123/repos/pyread7k",
+    url="https://github.com/Teledyne-Marine/pyread7k",
     packages=["pyread7k"],
     classifiers=[
         "Programming Language :: Python :: 3",
