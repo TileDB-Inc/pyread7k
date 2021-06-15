@@ -18,23 +18,6 @@ pip install git+https://github.com/Teledyne-Marine/pyread7k.git
 ```
 
 
-## Requirements
-
-* `Python` 3.6 or later
-
-* `psutil` 5.8.0
-
-* `numpy` 1.20.1
-
-* `scipy` 1.6.0
-
-* `geopy` 2.1.0
-
-* `scikit-image` 1.18.0
-
-* `numba` 0.53.0
-
-
 # Getting started
 Working with the pyread7k library is quite intuitive, and given that you have a s7k file, you can load a dataset using the PingDataset class:
 ```python
@@ -51,6 +34,17 @@ for ping in dataset:
     # Print selected gain level for each ping
     print("Gain:", ping.sonar_settings.gain_selection)
 ```
+
+
+# Dependencies
+
+* `Python` 3.6 or later
+* `psutil` 5.8.0
+* `numpy` 1.20.1
+* `scipy` 1.6.0
+* `geopy` 2.1.0
+* `scikit-image` 1.18.0
+* `numba` 0.53.0
 
 
 # The Processing Module
