@@ -47,23 +47,6 @@ for ping in dataset:
 * `numba` 0.53.0
 
 
-# The Processing Module
-Much of the processing functionality currently implemented is geared towards
-beamformed data, but Beamforming is in the backlog, so that s7k files with only IQ data can be processed as well.
-
-The processing module contains code to process pings in a variety of ways. These processing functions are grouped into an object called BFProcessing, which when instantiated will allow you to process beamformed pings like so:
-
-```python
-# Excluding ranges or beams
-ping.exclude_ranges(min_range_meter=30, max_range_meter=100)
-ping.exclude_bearings(min_beam_index=10, max_beam_index=70)
-```
-
-It also contains functions for decimating, resampling, and normalizing the data in a variety of ways.
-
-Last but not least, the library contains code for motion correction and translation of the pings, i.e. the process of transforming the ping from a rolled/pitched/yawed ping into a ping taken by a stationary vessel. The translation functionality can be used to get the ping data as if the vessel had been in a different location, and is mainly used for ping stacking.
-
-
 # Developing
 It is easy to add new functionality, such as supporting more record types, to pyread7k. Get up and running:
 - Install the [Poetry](https://python-poetry.org/docs/) dependency/package manager
