@@ -8,7 +8,7 @@ Using the PingDataset class, file data can be read on an as-needed basis with lo
 
 Low-level direct control is available with the _utils.py functions, which are reexported at top level. These allow you to read all records of a specific type manually
 
-The 7k protocol is described in the [Data Format Definition](documents/DATA%20FORMAT%20DEFINITION%20-%20%207k%20Data%20Format.pdf) document.
+The 7k protocol is described in the [Data Format Definition](documents/DATA%20FORMAT%20DEFINITION%20-%207k%20Data%20Format.pdf) document.
 
 # Installation
 The library can be installed directly from the Teledyne github repository using pip as seen below. All dependencies should be automatically installed.
