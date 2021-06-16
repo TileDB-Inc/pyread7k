@@ -19,10 +19,7 @@ setuptools.setup(
     install_requires=[
         "psutil==5.8.0",
         "numpy==1.20.1",
-        "scipy==1.6.0",
         "geopy==2.1.0",
-        "scikit-image==0.18.1",
-        "numba==0.53.0",
     ],
     python_requires=">=3.6",
 )

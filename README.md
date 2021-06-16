@@ -40,10 +40,7 @@ for ping in dataset:
 * `Python` 3.6 or later
 * `psutil` 5.8.0
 * `numpy` 1.20.1
-* `scipy` 1.6.0
 * `geopy` 2.1.0
-* `scikit-image` 1.18.0
-* `numba` 0.53.0
 
 
 # Developing
