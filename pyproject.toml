@@ -2,8 +2,8 @@
 name = "pyread7k"
 version = "1.0.0"
 description = "Python library to handle parsing and processing of s7k files"
-authors = ["Rógvi Dávid Arge <rda@flowtale.ai>", "Rasmus Klett Mortensen <rasmus.mortensen@teledyne.com>"]
-license = "Teledyne"
+authors = ["Teledyne RESON"]
+license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.6"
