@@ -2,17 +2,14 @@
 name = "pyread7k"
 version = "1.0.0"
 description = "Python library to handle parsing and processing of s7k files"
-authors = ["Rógvi Dávid Arge <rda@flowtale.ai>", "Rasmus Klett Mortensen <rasmus.mortensen@teledyne.com>"]
-license = "Teledyne"
+authors = ["Teledyne RESON"]
+license = "MIT"
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.9"
+python = ">=3.6"
 numpy = "^1.20.1"
-scipy = "^1.6.0"
 geopy = "^2.1.0"
 psutil = "^5.8.0"
-scikit-image = "^0.18.1"
-numba = "^0.52.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.2"

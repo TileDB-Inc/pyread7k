@@ -1,3 +1,6 @@
+[![Teledyne Logo](images/TeledyneLogo.png)](teledynemarine.com)
+
+
 # Pyread7k
 Pyread7k is a library for reading 7k files. It provides a high-level interface to the data in a file, with an API that is a compromise between being ergonomic, while still being easy to correllate with the Data Format Definition.
 
@@ -5,8 +8,7 @@ Using the PingDataset class, file data can be read on an as-needed basis with lo
 
 Low-level direct control is available with the _utils.py functions, which are reexported at top level. These allow you to read all records of a specific type manually
 
-The library also contains some additional functionality for processing, motion correcting, translating, and plotting ping data.
-
+The 7k protocol is described in the [Data Format Definition](documents/DATA%20FORMAT%20DEFINITION%20-%207k%20Data%20Format.pdf) document.
 
 # Installation
 The library can be installed directly from the Teledyne github repository using pip as seen below. All dependencies should be automatically installed.
@@ -33,21 +35,12 @@ for ping in dataset:
 ```
 
 
-# The Processing Module
-Much of the processing functionality currently implemented is geared towards
-beamformed data, but Beamforming is in the backlog, so that s7k files with only IQ data can be processed as well.
+# Dependencies
 
-The processing module contains code to process pings in a variety of ways. These processing functions are grouped into an object called BFProcessing, which when instantiated will allow you to process beamformed pings like so:
-
-```python
-# Excluding ranges or beams
-ping.exclude_ranges(min_range_meter=30, max_range_meter=100)
-ping.exclude_bearings(min_beam_index=10, max_beam_index=70)
-```
-
-It also contains functions for decimating, resampling, and normalizing the data in a variety of ways.
-
-Last but not least, the library contains code for motion correction and translation of the pings, i.e. the process of transforming the ping from a rolled/pitched/yawed ping into a ping taken by a stationary vessel. The translation functionality can be used to get the ping data as if the vessel had been in a different location, and is mainly used for ping stacking.
+* `Python` 3.6 or later
+* `psutil` 5.8.0
+* `numpy` 1.20.1
+* `geopy` 2.1.0
 
 
 # Developing
@@ -58,3 +51,10 @@ It is easy to add new functionality, such as supporting more record types, to py
 
 You should now have a functional environment! You can run the test suite by executing `poetry run pytest`. The first time you do so, you must run it with the `-s` argument: `poetry run pytest -s`. This allows the test suite to ask you to input paths to 7k files to use for the testing.
 Issues and pull requests are always welcome!
+
+
+# License
+Copyright 2021 Teledyne RESON A/S
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
