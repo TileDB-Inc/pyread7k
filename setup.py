@@ -21,5 +21,5 @@ setuptools.setup(
         "numpy==1.20.1",
         "geopy==2.1.0",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.8",
 )

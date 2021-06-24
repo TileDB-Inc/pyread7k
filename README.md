@@ -37,7 +37,7 @@ for ping in dataset:
 
 # Dependencies
 
-* `Python` 3.6 or later
+* `Python` 3.8 or later
 * `psutil` 5.8.0
 * `numpy` 1.20.1
 * `geopy` 2.1.0
