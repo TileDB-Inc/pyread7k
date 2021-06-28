@@ -4,6 +4,8 @@ version = "1.0.0"
 description = "Python library to handle parsing and processing of s7k files"
 authors = ["Teledyne RESON"]
 license = "MIT"
+readme = 'README.md'
+repository = "https://github.com/Teledyne-Marine/pyread7k"
 
 [tool.poetry.dependencies]
 python = ">=3.8"
