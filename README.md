@@ -11,7 +11,7 @@ Low-level direct control is available with the _utils.py functions, which are re
 The 7k protocol is described in the [Data Format Definition](https://raw.githubusercontent.com/Teledyne-Marine/pyread7k/master/documents/DATA%20FORMAT%20DEFINITION%20-%207k%20Data%20Format.pdf) document.
 
 # Installation
-The library can be installed using pip directly from pypi, or from the Teledyne github repository as seen below. All dependencies should be automatically installed.
+The library can be installed using pip, directly from PyPI, or from the Teledyne github repository as seen below. All dependencies should be automatically installed.
 ```bash
 pip install pyread7k
 pip install git+https://github.com/Teledyne-Marine/pyread7k.git
