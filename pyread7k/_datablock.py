@@ -2,10 +2,10 @@
 Tools for reading structured binary data
 """
 import abc
-import datetime
 import io
 import struct
 from collections import defaultdict, namedtuple
+from datetime import datetime, timedelta
 
 import numpy as np
 
@@ -33,6 +33,22 @@ elemT = _ElementTypes(**dict(zip(_ElementTypes._fields, _ElementTypes._fields)))
 
 def elemD_(name: str, fmt: str, count=1):
     return (name, (fmt, count))
+
+
+def parse_7k_timestamp(bs: bytes) -> datetime:
+    """Parse a timestamp from a bytes object"""
+    # We have raw days, datetime takes days and months. Easier to just add them
+    # as timedelta, and let datetime worry about leap-whatever
+    y, d, s, h, m = struct.unpack("<HHfBB", bs)
+    t = datetime(year=y, month=1, day=1)
+    t += timedelta(
+        # subtract 1 since datetime already starts at 1
+        days=d - 1,
+        hours=h,
+        minutes=m,
+        seconds=s,
+    )
+    return t
 
 
 class DataBlock(metaclass=abc.ABCMeta):
@@ -155,12 +171,7 @@ DRF_PRIMITIVE_FIELDS = (
     "size",
     "optional_data_offset",
     "optional_data_id",
-    # The DFD is mistaken, time is NOT u8 * 10. Needs special handling.
-    "time_year",
-    "time_day",
-    "time_seconds",
-    "time_hours",
-    "time_minutes",
+    "time",
     "record_version",
     "record_type_id",
     "device_id",
@@ -190,12 +201,7 @@ class DRFBlock(DataBlock):
                     ((elemT.u32,), None),
                     ((elemT.u32,), None),
                     ((elemT.u32,), None),
-                    # Time fields
-                    ((elemT.u16,), None),
-                    ((elemT.u16,), None),
-                    ((elemT.f32,), None),
-                    ((elemT.u8,), None),
-                    ((elemT.u8,), None),
+                    ((elemT.c8, 10), None),
                     ((elemT.u16,), None),
                     ((elemT.u32,), None),
                     ((elemT.u32,), None),
@@ -215,24 +221,6 @@ class DRFBlock(DataBlock):
 
     def read(self, source: io.RawIOBase):
         init_data = super().read(source)
-
-        time = datetime.datetime(year=init_data["time_year"], month=1, day=1)
-        # We have raw days, datetime takes days and months.
-        # Easier to just add them as timedelta, and let datetime worry about
-        # leap-whatever
-        time += datetime.timedelta(
-            # Subtract 1 since datetime already starts at 1.
-            days=init_data["time_day"] - 1,
-            hours=init_data["time_hours"],
-            minutes=init_data["time_minutes"],
-            seconds=init_data["time_seconds"],
-        )
-        init_data["time"] = time
-        # Remove raw time parts from data
-        del init_data["time_year"]
-        del init_data["time_day"]
-        del init_data["time_hours"]
-        del init_data["time_minutes"]
-        del init_data["time_seconds"]
-
+        # convert time from bytes to datetime
+        init_data["time"] = parse_7k_timestamp(b"".join(init_data["time"]))
         return records.DataRecordFrame(**init_data)
