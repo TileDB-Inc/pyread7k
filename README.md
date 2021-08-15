@@ -6,8 +6,6 @@ Pyread7k is a library for reading 7k files. It provides a high-level interface t
 
 Using the PingDataset class, file data can be read on an as-needed basis with low overhead. Each Ping in the dataset contains the full set of records which are related to that specifc ping. This means you can read the amplitudes, settings, motion, etc. for any single ping without worrying about file offsets or any low-level details at all.
 
-Low-level direct control is available with the _utils.py functions, which are reexported at top level. These allow you to read all records of a specific type manually
-
 The 7k protocol is described in the [Data Format Definition](https://raw.githubusercontent.com/Teledyne-Marine/pyread7k/master/documents/DATA%20FORMAT%20DEFINITION%20-%207k%20Data%20Format.pdf) document.
 
 # Installation
