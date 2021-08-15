@@ -1,11 +1,7 @@
 import collections
-import csv
 import functools
 import itertools as it
 from typing import Iterable, Iterator, Tuple, TypeVar
-
-from .records import FileCatalog
-
 
 T = TypeVar("T")
 
@@ -29,22 +25,3 @@ def cached_property(func):
     Note that it does not properly preserve type hints!
     """
     return functools.update_wrapper(functools.cached_property(func), func)
-
-
-def export_catalog(filename: str, file_catalog: FileCatalog):
-    """ Write the catalog to a file in csv format """
-
-    with open(filename, "w", newline="") as csvfile:
-        writer = csv.writer(
-            csvfile, delimiter=";", quotechar="|", quoting=csv.QUOTE_MINIMAL
-        )
-        writer.writerow([f"file={filename}"])
-        writer.writerow(["idx", "record_id", "file_offset", "size"])
-        for idx, (type_id, offset, size) in enumerate(
-            zip(
-                file_catalog.record_types,
-                file_catalog.offsets,
-                file_catalog.sizes,
-            )
-        ):
-            writer.writerow(str(n) for n in [idx, type_id, offset, size])

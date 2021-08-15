@@ -8,9 +8,10 @@ Fields are named as closely after DFD as possible, preferring verbose over ambig
 """
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from xml.etree import ElementTree as ET
 
 import numpy as np
@@ -313,3 +314,13 @@ class FileCatalog(BaseRecord):
     system_enumerators: list[int]
     times: list[datetime]
     record_counts: list[int]
+
+    def export_csv(self, filename: str, **csv_kwargs: Any) -> None:
+        """ Write the catalog to a file in csv format """
+        with open(filename, "w", newline="") as f:
+            writer = csv.writer(f, **csv_kwargs)
+            writer.writerow(("idx", "record_id", "file_offset", "size"))
+            for idx, (record_type, offset, size) in enumerate(
+                zip(self.record_types, self.offsets, self.sizes)
+            ):
+                writer.writerow(map(str, (idx, record_type, offset, size)))
