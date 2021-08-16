@@ -1,13 +1,16 @@
 """
 Store 7K records as a TileDB array
 """
+from datetime import datetime
+from io import BytesIO
 from itertools import chain, islice
-from typing import Any, Iterable, Iterator, List, Mapping, TypeVar
+from typing import Any, BinaryIO, Iterable, Iterator, List, Mapping, Tuple, TypeVar
 
 import numpy as np
 import tiledb
 
 import pyread7k
+
 
 T = TypeVar("T")
 
@@ -105,6 +108,44 @@ def to_tiledb(
                 arr[os, rs, ts] = np.array(bs, dtype=np.dtype("O"))
 
         tiledb.consolidate(array_uri)
+
+
+class S7KTileDBReader(pyread7k.S7KReader):
+    """Reader class for s7k TileDB arrays"""
+
+    def __init__(self, arr: tiledb.Array):
+        self._arr = arr
+
+    def read_records_during_ping(
+        self,
+        record_type: int,
+        ping_start: datetime,
+        ping_end: datetime,
+        offset_hint: int,
+    ) -> List[pyread7k.records.BaseRecord]:
+        records = []
+        read = pyread7k.record(record_type).read
+        query = self._arr.query(dims=(), return_incomplete=True)
+        time_slice = slice(np.datetime64(ping_start), np.datetime64(ping_end))
+        for rdict in query.multi_index[:, record_type, time_slice]:
+            for record_bytes in rdict["bytes"]:
+                records.append(read(BytesIO(record_bytes)))
+        return records
+
+    def _iter_offset_records(
+        self, record_type: int
+    ) -> Iterator[Tuple[int, pyread7k.records.BaseRecord]]:
+        read = pyread7k.record(record_type).read
+        query = self._arr.query(dims=("offset",), return_incomplete=True)
+        for rdict in query.multi_index[:, record_type]:
+            for offset, record_bytes in zip(rdict["offset"], rdict["bytes"]):
+                yield offset, read(BytesIO(record_bytes))
+
+    def _get_stream_for_read(self, offset: int) -> BinaryIO:
+        query = self._arr.query(dims=())
+        record_bytes = query.multi_index[offset]["bytes"]
+        assert len(record_bytes) == 1
+        return BytesIO(record_bytes[0])
 
 
 if __name__ == "__main__":
