@@ -105,7 +105,13 @@ class DataBlock(metaclass=abc.ABCMeta):
     def read_dense(self, source: io.RawIOBase, count=1) -> np.ndarray:
         if not isinstance(count, int) or count <= 0:
             raise ValueError("Count is not int or non-positive?")
-        return np.fromfile(source, dtype=np.dtype(self._np_types), count=count)
+        dtype = np.dtype(self._np_types)
+        if isinstance(source, io.FileIO):
+            return np.fromfile(source, dtype=dtype, count=count)
+        else:
+            return np.frombuffer(
+                source.read(dtype.itemsize * count), dtype=dtype, count=count
+            )
 
     @staticmethod
     def _util_take_names(elements) -> tuple:
