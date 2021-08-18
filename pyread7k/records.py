@@ -207,7 +207,7 @@ class BeamGeometry(BaseRecord):
     horizontal_angles: np.ndarray
     beam_width_ys: np.ndarray
     beam_width_xs: np.ndarray
-    tx_delays: Optional[np.ndarray]
+    tx_delays: Optional[np.ndarray] = None
 
 
 @dataclass

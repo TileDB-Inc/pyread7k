@@ -164,9 +164,7 @@ class _DataRecord7001(DataRecord):
         self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
     ):
         rth = self._block_rth.read(source)
-
         rd = []
-        print(rth["number_of_devices"])
         for _ in range(rth["number_of_devices"]):
             device_data = self._block_rd_info.read(source)
             _bytes_to_str(device_data, ["description"])
@@ -274,15 +272,25 @@ class _DataRecord7004(DataRecord):
     ):
         rth = self._block_rth.read(source)
         n_beams = rth["number_of_beams"]
-        block_rd = DataBlock(
-            (
-                elemD_("vertical_angles", elemT.f32, n_beams),
-                elemD_("horizontal_angles", elemT.f32, n_beams),
-                elemD_("beam_width_ys", elemT.f32, n_beams),
-                elemD_("beam_width_xs", elemT.f32, n_beams),
-                elemD_("tx_delays", elemT.f32, n_beams),  # TODO: handle when missing
-            )
+        block_rd_size = (
+            drf.size
+            - self._block_drf.size
+            - self._block_checksum.size
+            - self._block_rth.size
         )
+        block_rd_elements = (
+            elemD_("vertical_angles", elemT.f32, n_beams),
+            elemD_("horizontal_angles", elemT.f32, n_beams),
+            elemD_("beam_width_ys", elemT.f32, n_beams),
+            elemD_("beam_width_xs", elemT.f32, n_beams),
+            elemD_("tx_delays", elemT.f32, n_beams),
+        )
+        block_rd = DataBlock(block_rd_elements)
+        if block_rd.size != block_rd_size:
+            # tx_delays missing
+            block_rd = DataBlock(block_rd_elements[:-1])
+            assert block_rd.size == block_rd_size, (block_rd.size, block_rd_size)
+
         array_rd = block_rd.read_dense(source)
         # Convert to dictionary
         rd = {k[0]: array_rd[k[0]].squeeze() for k in block_rd.numpy_types}
