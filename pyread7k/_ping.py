@@ -11,11 +11,10 @@ Expected order of records for a ping:
 """
 import gc
 import math
-from collections import OrderedDict
 from datetime import timedelta
 from enum import Enum
 from functools import cached_property as cached_property_functools
-from typing import List, Optional, Union, overload
+from typing import List, Optional, Union
 
 import geopy
 import numpy as np
