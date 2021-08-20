@@ -365,7 +365,7 @@ class PingType(Enum):
 
 class PingDataset:
     """
-    Indexable PyTorch dataset returning Pings from a 7k file.
+    Indexable dataset returning Pings from a 7k file.
 
     Provides random access into pings in a file with minimal overhead.
     """
@@ -421,7 +421,7 @@ class PingDataset:
 
 class ConcatDataset:
     """
-    Reimplementation of Pytorch ConcatDataset to avoid dependency
+    Dataset concatenation object
     """
 
     def __init__(self, datasets):
@@ -463,4 +463,3 @@ class ConcatDataset:
             return self.datasets[dataset_index][sample_index]
         else:
             return [self[i] for i in range(*index.indices(len(self)))]
-
