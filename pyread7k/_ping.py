@@ -11,26 +11,6 @@ Expected order of records for a ping:
 """
 import gc
 import math
-from datetime import timedelta
-from enum import Enum
-from functools import cached_property as cached_property_functools
-from typing import List, Optional, Union, overload
-
-import geopy
-import numpy as np
-"""
-This module is an abstraction on top of the low-level 7k records, which allows
-the user to work in terms of "pings" with associated data, instead of thinking
-in the traditional 7k records.
-
-Expected order of records for a ping:
-7000, 7503, 1750, 7002, 7004, 7017, 7006, 7027, 7007, 7008, 7010, 7011, 7012,
-7013, 7018, 7019, 7028, 7029, 7037, 7038, 7039, 7041, 7042, 7048, 7049, 7057,
-7058, 7068, 7070
-
-"""
-import gc
-import math
 from collections import OrderedDict
 from datetime import timedelta
 from enum import Enum
