@@ -9,12 +9,11 @@ Expected order of records for a ping:
 7058, 7068, 7070
 
 """
-import gc
 import math
 from datetime import timedelta
 from enum import Enum
 from functools import cached_property as cached_property_functools
-from typing import List, Optional, Union, overload
+from typing import List, Optional, Union
 
 import geopy
 import numpy as np
@@ -60,12 +59,34 @@ class Manager7k:
     Internal class for Pings to share access to a file.
     """
 
-    def __init__(self, fhandle, file_catalog):
-        self.fhandle = fhandle
-        self.file_catalog = file_catalog
+    def __init__(self, filename):
+        self.filename = filename
+
+        self.fhandle = open(filename, "rb", buffering=0)
+
+        file_header = read_file_header(self.fhandle)
+        self.file_catalog = read_file_catalog(self.fhandle, file_header)
         self._offsets_for_type = LazyMap(
             initializer=lambda key: get_record_offsets(key, self.file_catalog)
         )
+
+    def get_pings(self):
+
+        settings_records = read_records(7000, self.fhandle, self.file_catalog)
+        settings_offsets = get_record_offsets(7000, self.file_catalog)
+        settings_and_offsets = list(zip(settings_records, settings_offsets))
+        pings = [
+            Ping(rec, offset, next_rec, next_off, self)
+            for (rec, offset), (next_rec, next_off) in zip(
+                settings_and_offsets,
+                settings_and_offsets[1:]
+                + [
+                    (None, math.inf),
+                ],
+            )
+        ]
+
+        return pings
 
     def get_configuration_record(self) -> records.Configuration:
         record_offsets = self._offsets_for_type[7001]
@@ -167,6 +188,20 @@ class Manager7k:
 
         return backward_records + forward_records
 
+    def __getstate__(self):
+        """ Remove unpicklable file handle from dict before pickling. """
+        state = self.__dict__.copy()
+        del state["fhandle"]
+        return state
+
+    def __setstate__(self, state):
+        """ Open new file handle after unpickling. """
+        self.__dict__.update(state)
+        self.fhandle = open(self.filename, "rb", buffering=0)
+
+    def __del__(self):
+        self.fhandle.close()
+
 
 class Ping:
     """
@@ -215,10 +250,6 @@ class Ping:
         for key in self.minimizable_properties:
             if key in self.__dict__:
                 del self.__dict__[key]
-        # We need to force the garbage collector to remove the
-        # deleted attributes from memory or else it'll keep it
-        # bound to the object
-        gc.collect()
 
     def _get_single_associated_record(self, record_type: int):
         """
@@ -334,7 +365,7 @@ class PingType(Enum):
 
 class PingDataset:
     """
-    Indexable PyTorch dataset returning Pings from a 7k file.
+    Indexable dataset returning Pings from a 7k file.
 
     Provides random access into pings in a file with minimal overhead.
     """
@@ -343,29 +374,10 @@ class PingDataset:
         """
         if include argument is not ANY, pings will be filtered.
         """
+        manager = Manager7k(filename)
         self.filename = filename
 
-        self.fhandle = open(filename, "rb", buffering=0)
-
-        file_header = read_file_header(self.fhandle)
-        file_catalog = read_file_catalog(self.fhandle, file_header)
-
-        manager = Manager7k(self.fhandle, file_catalog)
-
-        settings_records = read_records(7000, self.fhandle, file_catalog)
-        settings_offsets = get_record_offsets(7000, file_catalog)
-        settings_and_offsets = list(zip(settings_records, settings_offsets))
-
-        pings = [
-            Ping(rec, offset, next_rec, next_off, manager)
-            for (rec, offset), (next_rec, next_off) in zip(
-                settings_and_offsets,
-                settings_and_offsets[1:]
-                + [
-                    (None, math.inf),
-                ],
-            )
-        ]
+        pings = manager.get_pings()
 
         if include == PingType.BEAMFORMED:
             self.pings = [p for p in pings if p.has_beamformed]
@@ -376,42 +388,78 @@ class PingDataset:
         else:
             raise NotImplementedError("Encountered unknown PingType: %s" % str(include))
 
+        self.__ping_numbers = [p.ping_number for p in self.pings]
+
+    @property
+    def ping_numbers(self):
+        return self.__ping_numbers
+
+    def minimize_memory(self):
+        for p in self.pings:
+            p.minimize_memory()
+
     def __len__(self) -> int:
         return len(self.pings)
 
-    def __iter__(self):
-        return iter(self.pings)
+    def index_of(self, ping_number: int):
+        return self.__ping_numbers.index(ping_number)
+
+    def get_by_number(
+        self, ping_number: int, default: Optional[int] = None
+    ) -> Union[Ping, None]:
+        if not isinstance(ping_number, int):
+            raise TypeError("Ping number must be an integer")
+        try:
+            ping_index = self.ping_numbers.index(ping_number)
+        except ValueError:
+            return default
+        return self.pings[ping_index]
 
     def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
-        if isinstance(index, int):
-            return self.pings[index]
-        elif isinstance(index, slice):
-            return self.pings[index]
-        else:
-            raise TypeError("Expected either int or slice, not {0}".format(type(index)))
+        return self.pings[index]
 
 
 class ConcatDataset:
     """
-    Reimplementation of Pytorch ConcatDataset to avoid dependency
+    Dataset concatenation object
     """
 
     def __init__(self, datasets):
-
         self.cum_lengths = np.cumsum([len(d) for d in datasets])
         self.datasets = datasets
+        self.__ping_numbers = [pn for ds in datasets for pn in ds.ping_numbers]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.cum_lengths[-1]
 
-    def __getitem__(self, index):
-        if index < 0:
-            if -index > len(self):
-                raise ValueError("Index out of range")
-            index = len(self) + index
-        dataset_index = np.searchsorted(self.cum_lengths, index, side="right")
-        if dataset_index == 0:
-            sample_index = index
+    @property
+    def ping_numbers(self) -> List[int]:
+        return self.__ping_numbers
+
+    def index_of(self, ping_number: int) -> int:
+        return self.ping_numbers.index(ping_number)
+
+    def get_by_number(
+        self, ping_number: int, default: Optional[int] = None
+    ) -> Union[Ping, None]:
+        if not isinstance(ping_number, int):
+            raise TypeError("Ping number must be an integer")
+        for ds in self.datasets:
+            if (ping_index := ds.get_by_number(ping_number, default)) is not None:
+                return ds[ping_index]
+        return default
+
+    def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
+        if not isinstance(index, slice):
+            if index < 0:
+                if -index > len(self):
+                    raise ValueError("Index out of range")
+                index = len(self) + index
+            dataset_index = np.searchsorted(self.cum_lengths, index, side="right")
+            if dataset_index == 0:
+                sample_index = index
+            else:
+                sample_index = index - self.cum_lengths[dataset_index - 1]
+            return self.datasets[dataset_index][sample_index]
         else:
-            sample_index = index - self.cum_lengths[dataset_index - 1]
-        return self.datasets[dataset_index][sample_index]
+            return [self[i] for i in range(*index.indices(len(self)))]
