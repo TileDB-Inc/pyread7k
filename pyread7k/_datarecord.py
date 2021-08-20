@@ -4,14 +4,13 @@ Low-level classes for reading various 7k record types.
 # pylint: disable=invalid-name unnecessary-comprehension
 import abc
 import io
-from collections import namedtuple
 from typing import Any, Dict, Optional
 from xml.etree import ElementTree as ET
 
 import numpy as np
 
 from . import records
-from ._datablock import DataBlock, DRFBlock, elemD_, elemT
+from ._datablock import DataBlock, DRFBlock, elemD_, elemT, parse_7k_timestamp
 
 
 def _bytes_to_str(dict, keys):
@@ -247,7 +246,7 @@ class _DataRecord7300(DataRecord):
             elemD_("record_types", elemT.u16),
             elemD_("device_ids", elemT.u16),
             elemD_("system_enumerators", elemT.u16),
-            elemD_("times", elemT.u8, 10),
+            elemD_("times", elemT.c8, 10),
             elemD_("record_counts", elemT.u32),
             elemD_(None, elemT.u16, 8),
         )
@@ -258,6 +257,11 @@ class _DataRecord7300(DataRecord):
     ):
         rth = self._block_rth.read(source)
         rd = self._block_rd_entry.read(source, rth["number_of_records"])
+        times_bytes = rd["times"]
+        rd["times"] = tuple(
+            parse_7k_timestamp(b"".join(times_bytes[i : i + 10]))
+            for i in range(0, len(times_bytes), 10)
+        )
         return records.FileCatalog(**rth, **rd, frame=drf)
 
 
