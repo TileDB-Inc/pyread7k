@@ -4,14 +4,13 @@ Low-level classes for reading various 7k record types.
 # pylint: disable=invalid-name unnecessary-comprehension
 import abc
 import io
-from collections import namedtuple
 from typing import Any, Dict, Optional
 from xml.etree import ElementTree as ET
 
 import numpy as np
 
 from . import records
-from ._datablock import DataBlock, DRFBlock, elemD_, elemT
+from ._datablock import DataBlock, DRFBlock, elemD_, elemT, parse_7k_timestamp
 
 
 def _bytes_to_str(dict, keys):
@@ -164,9 +163,7 @@ class _DataRecord7001(DataRecord):
         self, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
     ):
         rth = self._block_rth.read(source)
-
         rd = []
-        print(rth["number_of_devices"])
         for _ in range(rth["number_of_devices"]):
             device_data = self._block_rd_info.read(source)
             _bytes_to_str(device_data, ["description"])
@@ -247,7 +244,7 @@ class _DataRecord7300(DataRecord):
             elemD_("record_types", elemT.u16),
             elemD_("device_ids", elemT.u16),
             elemD_("system_enumerators", elemT.u16),
-            elemD_("times", elemT.u8, 10),
+            elemD_("times", elemT.c8, 10),
             elemD_("record_counts", elemT.u32),
             elemD_(None, elemT.u16, 8),
         )
@@ -258,6 +255,11 @@ class _DataRecord7300(DataRecord):
     ):
         rth = self._block_rth.read(source)
         rd = self._block_rd_entry.read(source, rth["number_of_records"])
+        times_bytes = rd["times"]
+        rd["times"] = tuple(
+            parse_7k_timestamp(b"".join(times_bytes[i : i + 10]))
+            for i in range(0, len(times_bytes), 10)
+        )
         return records.FileCatalog(**rth, **rd, frame=drf)
 
 
@@ -274,15 +276,25 @@ class _DataRecord7004(DataRecord):
     ):
         rth = self._block_rth.read(source)
         n_beams = rth["number_of_beams"]
-        block_rd = DataBlock(
-            (
-                elemD_("vertical_angles", elemT.f32, n_beams),
-                elemD_("horizontal_angles", elemT.f32, n_beams),
-                elemD_("beam_width_ys", elemT.f32, n_beams),
-                elemD_("beam_width_xs", elemT.f32, n_beams),
-                elemD_("tx_delays", elemT.f32, n_beams),  # TODO: handle when missing
-            )
+        block_rd_size = (
+            drf.size
+            - self._block_drf.size
+            - self._block_checksum.size
+            - self._block_rth.size
         )
+        block_rd_elements = (
+            elemD_("vertical_angles", elemT.f32, n_beams),
+            elemD_("horizontal_angles", elemT.f32, n_beams),
+            elemD_("beam_width_ys", elemT.f32, n_beams),
+            elemD_("beam_width_xs", elemT.f32, n_beams),
+            elemD_("tx_delays", elemT.f32, n_beams),
+        )
+        block_rd = DataBlock(block_rd_elements)
+        if block_rd.size != block_rd_size:
+            # tx_delays missing
+            block_rd = DataBlock(block_rd_elements[:-1])
+            assert block_rd.size == block_rd_size, (block_rd.size, block_rd_size)
+
         array_rd = block_rd.read_dense(source)
         # Convert to dictionary
         rd = {k[0]: array_rd[k[0]].squeeze() for k in block_rd.numpy_types}

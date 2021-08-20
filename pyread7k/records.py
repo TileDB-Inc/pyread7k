@@ -8,8 +8,8 @@ Fields are named as closely after DFD as possible, preferring verbose over ambig
 """
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 from xml.etree import ElementTree as ET
 
@@ -29,7 +29,7 @@ class DataRecordFrame:
     size: int
     optional_data_offset: int
     optional_data_id: int
-    time: datetime.datetime
+    time: datetime
     record_version: int
     record_type_id: int
     device_id: int
@@ -207,7 +207,7 @@ class BeamGeometry(BaseRecord):
     horizontal_angles: np.ndarray
     beam_width_ys: np.ndarray
     beam_width_xs: np.ndarray
-    tx_delays: Optional[np.ndarray]
+    tx_delays: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -311,5 +311,5 @@ class FileCatalog(BaseRecord):
     record_types: list[int]
     device_ids: list[int]
     system_enumerators: list[int]
-    times: list[int]  # TODO: Correctly parse
+    times: list[datetime]
     record_counts: list[int]
