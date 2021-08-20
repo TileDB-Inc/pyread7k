@@ -450,13 +450,17 @@ class ConcatDataset:
         return default
 
     def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
-        if index < 0:
-            if -index > len(self):
-                raise ValueError("Index out of range")
-            index = len(self) + index
-        dataset_index = np.searchsorted(self.cum_lengths, index, side="right")
-        if dataset_index == 0:
-            sample_index = index
+        if not isinstance(index, slice):
+            if index < 0:
+                if -index > len(self):
+                    raise ValueError("Index out of range")
+                index = len(self) + index
+            dataset_index = np.searchsorted(self.cum_lengths, index, side="right")
+            if dataset_index == 0:
+                sample_index = index
+            else:
+                sample_index = index - self.cum_lengths[dataset_index - 1]
+            return self.datasets[dataset_index][sample_index]
         else:
-            sample_index = index - self.cum_lengths[dataset_index - 1]
-        return self.datasets[dataset_index][sample_index]
+            return [self[i] for i in range(*index.indices(len(self)))]
+
