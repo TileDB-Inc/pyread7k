@@ -9,7 +9,6 @@ Expected order of records for a ping:
 7058, 7068, 7070
 
 """
-import gc
 import math
 from datetime import timedelta
 from enum import Enum
@@ -243,10 +242,6 @@ class Ping:
         for key in self.minimizable_properties:
             if key in self.__dict__:
                 del self.__dict__[key]
-        # We need to force the garbage collector to remove the
-        # deleted attributes from memory or else it'll keep it
-        # bound to the object
-        # gc.collect()
 
     def _get_single_associated_record(self, record_type: int):
         """
@@ -383,21 +378,28 @@ class PingDataset:
             raise NotImplementedError("Encountered unknown PingType: %s" %
                                       str(include))
 
-        self.__ping_numbers = dict(
-            (p.ping_number, i) for i, p in enumerate(self.pings))
+        self.__ping_numbers = [p.ping_number for p in self.pings]
 
     @property
     def ping_numbers(self):
         return self.__ping_numbers
 
+    def minimize_memory(self):
+        for p in self.pings:
+            p.minimize_memory()
+
     def __len__(self) -> int:
         return len(self.pings)
 
-    def get(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
+    def index_of(self, ping_number: int):
+        return self.__ping_numbers.index(ping_number)
+
+    def get_by_number(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
         if not isinstance(ping_number, int):
             raise TypeError("Ping number must be an integer")
-        ping_index = self.ping_numbers.get(ping_number, None)
-        if ping_index is None:
+        try:
+            ping_index = self.ping_numbers.index(ping_number)
+        except ValueError:
             return default
         return self.pings[ping_index]
 
@@ -410,22 +412,29 @@ class ConcatDataset:
     Reimplementation of Pytorch ConcatDataset to avoid dependency
     """
     def __init__(self, datasets):
-
         self.cum_lengths = np.cumsum([len(d) for d in datasets])
         self.datasets = datasets
+        self.__ping_numbers = [pn for ds in datasets for pn in ds.ping_numbers]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.cum_lengths[-1]
 
-    def get(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
+    @property
+    def ping_numbers(self) -> List[int]:
+        return self.__ping_numbers
+
+    def index_of(self, ping_number: int) -> int:
+        return self.ping_numbers.index(ping_number)
+
+    def get_by_number(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
         if not isinstance(ping_number, int):
             raise TypeError("Ping number must be an integer")
         for ds in self.datasets:
-            if (ping_index := ds.get(ping_number)) is not None:
+            if (ping_index := ds.get_by_number(ping_number, default)) is not None:
                 return ds[ping_index]
         return default
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
         if index < 0:
             if -index > len(self):
                 raise ValueError("Index out of range")
