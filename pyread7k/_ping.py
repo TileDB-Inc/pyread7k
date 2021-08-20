@@ -18,14 +18,31 @@ from typing import List, Optional, Union, overload
 
 import geopy
 import numpy as np
+"""
+This module is an abstraction on top of the low-level 7k records, which allows
+the user to work in terms of "pings" with associated data, instead of thinking
+in the traditional 7k records.
+
+Expected order of records for a ping:
+7000, 7503, 1750, 7002, 7004, 7017, 7006, 7027, 7007, 7008, 7010, 7011, 7012,
+7013, 7018, 7019, 7028, 7029, 7037, 7038, 7039, 7041, 7042, 7048, 7049, 7057,
+7058, 7068, 7070
+
+"""
+import gc
+import math
+from collections import OrderedDict
+from datetime import timedelta
+from enum import Enum
+from functools import cached_property as cached_property_functools
+from typing import List, Optional, Union, overload
+
+import geopy
+import numpy as np
 
 from . import _datarecord, records
-from ._utils import (
-    get_record_offsets,
-    read_file_catalog,
-    read_file_header,
-    read_records,
-)
+from ._utils import (get_record_offsets, read_file_catalog, read_file_header,
+                     read_records)
 
 
 def cached_property(func):
@@ -44,7 +61,6 @@ class LazyMap(dict):
     """
     An advanced defaultdict, where the initializer may depend on the key.
     """
-
     def __init__(self, initializer, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.initializer = initializer
@@ -59,13 +75,32 @@ class Manager7k:
     """
     Internal class for Pings to share access to a file.
     """
+    def __init__(self, filename):
+        self.filename = filename
 
-    def __init__(self, fhandle, file_catalog):
-        self.fhandle = fhandle
-        self.file_catalog = file_catalog
+        self.fhandle = open(filename, "rb", buffering=0)
+
+        file_header = read_file_header(self.fhandle)
+        self.file_catalog = read_file_catalog(self.fhandle, file_header)
         self._offsets_for_type = LazyMap(
-            initializer=lambda key: get_record_offsets(key, self.file_catalog)
-        )
+            initializer=lambda key: get_record_offsets(key, self.file_catalog))
+
+    def get_pings(self):
+
+        settings_records = read_records(7000, self.fhandle, self.file_catalog)
+        settings_offsets = get_record_offsets(7000, self.file_catalog)
+        settings_and_offsets = list(zip(settings_records, settings_offsets))
+        pings = [
+            Ping(rec, offset, next_rec, next_off, self)
+            for (rec, offset), (next_rec, next_off) in zip(
+                settings_and_offsets,
+                settings_and_offsets[1:] + [
+                    (None, math.inf),
+                ],
+            )
+        ]
+
+        return pings
 
     def get_configuration_record(self) -> records.Configuration:
         record_offsets = self._offsets_for_type[7001]
@@ -93,7 +128,9 @@ class Manager7k:
         next ping's 7000 record.
         """
         record_offsets = self._offsets_for_type[record_type]
-        next_index = np.searchsorted(record_offsets, offset_start, side="right")
+        next_index = np.searchsorted(record_offsets,
+                                     offset_start,
+                                     side="right")
 
         if next_index == len(record_offsets):
             # Reached end of offsets without match
@@ -111,7 +148,8 @@ class Manager7k:
         self.fhandle.seek(offset)
         return _datarecord.record(record_type).read(self.fhandle)
 
-    def get_records_during_ping(self, record_type, ping_start, ping_end, offset_hint):
+    def get_records_during_ping(self, record_type, ping_start, ping_end,
+                                offset_hint):
         """
         Reads all records of record_type which are timestamped in the interval.
 
@@ -167,6 +205,20 @@ class Manager7k:
 
         return backward_records + forward_records
 
+    def __getstate__(self):
+        """ Remove unpicklable file handle from dict before pickling. """
+        state = self.__dict__.copy()
+        del state["fhandle"]
+        return state
+
+    def __setstate__(self, state):
+        """ Open new file handle after unpickling. """
+        self.__dict__.update(state)
+        self.fhandle = open(self.filename, "rb", buffering=0)
+
+    def __del__(self):
+        self.fhandle.close()
+
 
 class Ping:
     """
@@ -194,15 +246,12 @@ class Ping:
         self._next_offset = (
             next_offset  # Next ping's start offset, meaning this ping has ended
         )
-        self.next_ping_start = (
-            next_record.frame.time if next_record is not None else None
-        )
+        self.next_ping_start = (next_record.frame.time
+                                if next_record is not None else None)
 
         self._offset_map = LazyMap(
             initializer=lambda key: self._manager.get_next_offset(
-                key, self._own_offset, self._next_offset
-            )
-        )
+                key, self._own_offset, self._next_offset))
 
     def __str__(self) -> str:
         return "<Ping %i>" % self.sonar_settings.ping_number
@@ -218,7 +267,7 @@ class Ping:
         # We need to force the garbage collector to remove the
         # deleted attributes from memory or else it'll keep it
         # bound to the object
-        gc.collect()
+        # gc.collect()
 
     def _get_single_associated_record(self, record_type: int):
         """
@@ -244,22 +293,22 @@ class Ping:
     def position_set(self) -> List[records.Position]:
         """ Returns all 1003 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1003, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
-        )
+            1003, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
 
     @cached_property
     def roll_pitch_heave_set(self) -> List[records.RollPitchHeave]:
         """ Returns all 1012 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1012, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
-        )
+            1012, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
 
     @cached_property
     def heading_set(self) -> List[records.Heading]:
         """ Returns all 1013 records timestamped within this ping. """
         return self._manager.get_records_during_ping(
-            1013, self.sonar_settings.frame.time, self.next_ping_start, self._own_offset
-        )
+            1013, self.sonar_settings.frame.time, self.next_ping_start,
+            self._own_offset)
 
     @cached_property
     def configuration(self) -> records.Configuration:
@@ -305,22 +354,20 @@ class Ping:
     def receiver_motion_for_sample(self, sample: int):
         """ Find the most appropriate motion data for a sample based on time """
         time = self.sonar_settings.frame.time + timedelta(
-            seconds=sample / self.sonar_settings.sample_rate
-        )
+            seconds=sample / self.sonar_settings.sample_rate)
         max_rph_idx = len(self.roll_pitch_heave_set) - 1
         max_h_idx = len(self.heading_set) - 1
-        rph_index = np.min(
-            [
-                np.searchsorted(
-                    [m.frame.time for m in self.roll_pitch_heave_set], time
-                ),
-                max_rph_idx,
-            ]
-        )
-        heading_index = np.min(
-            [np.searchsorted([m.frame.time for m in self.heading_set], time), max_h_idx]
-        )
-        return self.roll_pitch_heave_set[rph_index], self.heading_set[heading_index]
+        rph_index = np.min([
+            np.searchsorted([m.frame.time for m in self.roll_pitch_heave_set],
+                            time),
+            max_rph_idx,
+        ])
+        heading_index = np.min([
+            np.searchsorted([m.frame.time for m in self.heading_set], time),
+            max_h_idx
+        ])
+        return self.roll_pitch_heave_set[rph_index], self.heading_set[
+            heading_index]
 
 
 # %%
@@ -338,34 +385,14 @@ class PingDataset:
 
     Provides random access into pings in a file with minimal overhead.
     """
-
     def __init__(self, filename, include: PingType = PingType.ANY):
         """
         if include argument is not ANY, pings will be filtered.
         """
+        manager = Manager7k(filename)
         self.filename = filename
 
-        self.fhandle = open(filename, "rb", buffering=0)
-
-        file_header = read_file_header(self.fhandle)
-        file_catalog = read_file_catalog(self.fhandle, file_header)
-
-        manager = Manager7k(self.fhandle, file_catalog)
-
-        settings_records = read_records(7000, self.fhandle, file_catalog)
-        settings_offsets = get_record_offsets(7000, file_catalog)
-        settings_and_offsets = list(zip(settings_records, settings_offsets))
-
-        pings = [
-            Ping(rec, offset, next_rec, next_off, manager)
-            for (rec, offset), (next_rec, next_off) in zip(
-                settings_and_offsets,
-                settings_and_offsets[1:]
-                + [
-                    (None, math.inf),
-                ],
-            )
-        ]
+        pings = manager.get_pings()
 
         if include == PingType.BEAMFORMED:
             self.pings = [p for p in pings if p.has_beamformed]
@@ -374,28 +401,35 @@ class PingDataset:
         elif include == PingType.ANY:
             self.pings = pings
         else:
-            raise NotImplementedError("Encountered unknown PingType: %s" % str(include))
+            raise NotImplementedError("Encountered unknown PingType: %s" %
+                                      str(include))
+
+        self.__ping_numbers = dict(
+            (p.ping_number, i) for i, p in enumerate(self.pings))
+
+    @property
+    def ping_numbers(self):
+        return self.__ping_numbers
 
     def __len__(self) -> int:
         return len(self.pings)
 
-    def __iter__(self):
-        return iter(self.pings)
+    def get(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
+        if not isinstance(ping_number, int):
+            raise TypeError("Ping number must be an integer")
+        ping_index = self.ping_numbers.get(ping_number, None)
+        if ping_index is None:
+            return default
+        return self.pings[ping_index]
 
     def __getitem__(self, index: Union[slice, int]) -> Union[Ping, List[Ping]]:
-        if isinstance(index, int):
-            return self.pings[index]
-        elif isinstance(index, slice):
-            return self.pings[index]
-        else:
-            raise TypeError("Expected either int or slice, not {0}".format(type(index)))
+        return self.pings[index]
 
 
 class ConcatDataset:
     """
     Reimplementation of Pytorch ConcatDataset to avoid dependency
     """
-
     def __init__(self, datasets):
 
         self.cum_lengths = np.cumsum([len(d) for d in datasets])
@@ -403,6 +437,14 @@ class ConcatDataset:
 
     def __len__(self):
         return self.cum_lengths[-1]
+
+    def get(self, ping_number: int, default: Optional[int] = None) -> Union[Ping, None]:
+        if not isinstance(ping_number, int):
+            raise TypeError("Ping number must be an integer")
+        for ds in self.datasets:
+            if (ping_index := ds.get(ping_number)) is not None:
+                return ds[ping_index]
+        return default
 
     def __getitem__(self, index):
         if index < 0:
