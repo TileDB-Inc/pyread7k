@@ -31,7 +31,7 @@ from typing import (
 import geopy
 import numpy as np
 
-from . import _datarecord, records
+from . import records
 from ._utils import cached_property, window
 
 
@@ -170,13 +170,13 @@ class S7KReader(metaclass=ABCMeta):
 
     def _read_record(self, record_type: int, offset: int) -> records.BaseRecord:
         """Read a record of record_type at the given offset"""
-        return _datarecord.record(record_type).read(self._get_stream_for_read(offset))
+        return records.record(record_type).read(self._get_stream_for_read(offset))
 
     def _iter_offset_records(
         self, record_type: int
     ) -> Iterator[Tuple[int, records.BaseRecord]]:
         """Generate all the (offset, record) tuples for the given record type"""
-        read_record = _datarecord.record(record_type).read
+        read_record = records.record(record_type).read
         get_stream = self._get_stream_for_read
         for offset in self._get_offsets(record_type):
             yield offset, read_record(get_stream(offset))

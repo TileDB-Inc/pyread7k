@@ -9,8 +9,6 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-from . import records
-
 _ElementTypes = namedtuple(
     "_ElementTypes",
     [
@@ -226,7 +224,9 @@ class DRFBlock(DataBlock):
         super().__init__(elements)
 
     def read(self, source: io.RawIOBase):
+        from .records import DataRecordFrame
+
         init_data = super().read(source)
         # convert time from bytes to datetime
         init_data["time"] = parse_7k_timestamp(b"".join(init_data["time"]))
-        return records.DataRecordFrame(**init_data)
+        return DataRecordFrame(**init_data)

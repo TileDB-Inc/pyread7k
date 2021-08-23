@@ -6,8 +6,8 @@ import itertools as it
 from typing import Iterable, Iterator, Tuple, TypeVar
 
 from . import records
-from ._datarecord import record as _record
 from .records import FileCatalog, FileHeader
+from .records import record as _record
 
 __all__ = [
     "read_file_header",
