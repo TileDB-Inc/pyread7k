@@ -2,9 +2,11 @@
 Low-level classes for reading various 7k record types.
 """
 # pylint: disable=invalid-name unnecessary-comprehension
+from __future__ import annotations
+
 import io
 from abc import ABCMeta, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Dict, Type
 from xml.etree import ElementTree as ET
 
 import numpy as np
@@ -34,12 +36,19 @@ class DataRecord(metaclass=ABCMeta):
 
     _block_drf = DRFBlock()
     _block_checksum = DataBlock((("checksum", ("u32",)),))
-    implemented: Optional[Dict[int, Any]] = None
+    _registry: Dict[int, Type[DataRecord]] = {}
 
-    @staticmethod
-    @abstractmethod
-    def record_type_id():
-        """Return data record type id"""
+    def __init_subclass__(cls, record_type_id: int, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._registry[record_type_id] = cls
+
+    @classmethod
+    def get_class(cls, record_type_id: int) -> Type[DataRecord]:
+        """Get a DataRecord subclass by record id"""
+        try:
+            return cls._registry[record_type_id]
+        except KeyError:
+            raise ValueError(f"DataRecord with type-ID={record_type_id} not supported")
 
     @classmethod
     def read(cls, source: io.RawIOBase):
@@ -57,13 +66,6 @@ class DataRecord(metaclass=ABCMeta):
         return parsed_data
 
     @classmethod
-    def instance(cls, record_type_id: int):
-        """Gets a specific datarecord by type id"""
-        if cls.implemented is None:
-            cls.implemented = {c.record_type_id(): c for c in cls.__subclasses__()}
-        return cls.implemented.get(record_type_id, None)
-
-    @classmethod
     @abstractmethod
     def _read(
         cls, source: io.RawIOBase, drf: records.DataRecordFrame, start_offset: int
@@ -77,10 +79,8 @@ class DataRecord(metaclass=ABCMeta):
         """
 
 
-class _DataRecord7000(DataRecord):
+class _DataRecord7000(DataRecord, record_type_id=7000):
     """Sonar Settings"""
-
-    record_type_id = staticmethod(lambda: 7000)
 
     _block_rth = DataBlock(
         (
@@ -135,10 +135,8 @@ class _DataRecord7000(DataRecord):
         return records.SonarSettings(**rth, frame=drf)
 
 
-class _DataRecord7001(DataRecord):
-    """ Configuration """
-
-    record_type_id = staticmethod(lambda: 7001)
+class _DataRecord7001(DataRecord, record_type_id=7001):
+    """Configuration"""
 
     _block_rth = DataBlock(
         (
@@ -172,9 +170,7 @@ class _DataRecord7001(DataRecord):
         return records.Configuration(**rth, devices=rd, frame=drf)
 
 
-class _DataRecord7200(DataRecord):
-
-    record_type_id = staticmethod(lambda: 7200)
+class _DataRecord7200(DataRecord, record_type_id=7200):
 
     _block_rth = DataBlock(
         (
@@ -218,9 +214,7 @@ class _DataRecord7200(DataRecord):
         return records.FileHeader(**rth, **rd, **od, frame=drf)
 
 
-class _DataRecord7300(DataRecord):
-
-    record_type_id = staticmethod(lambda: 7300)
+class _DataRecord7300(DataRecord, record_type_id=7300):
 
     _block_rth = DataBlock(
         (
@@ -257,10 +251,8 @@ class _DataRecord7300(DataRecord):
         return records.FileCatalog(**rth, **rd, frame=drf)
 
 
-class _DataRecord7004(DataRecord):
+class _DataRecord7004(DataRecord, record_type_id=7004):
     """Beam Geometry"""
-
-    record_type_id = staticmethod(lambda: 7004)
 
     _block_rth = DataBlock(
         (elemD_("sonar_id", elemT.u64), elemD_("number_of_beams", elemT.u32))
@@ -297,10 +289,8 @@ class _DataRecord7004(DataRecord):
         return records.BeamGeometry(**rth, **rd, frame=drf)
 
 
-class _DataRecord7010(DataRecord):
-    """ TVG Values """
-
-    record_type_id = staticmethod(lambda: 7010)
+class _DataRecord7010(DataRecord, record_type_id=7010):
+    """TVG Values"""
 
     _block_rth = DataBlock(
         (
@@ -323,10 +313,8 @@ class _DataRecord7010(DataRecord):
         return records.TVG(**rth, gains=rd["gains"], frame=drf)
 
 
-class _DataRecord7018(DataRecord):
-    """ Beamformed data """
-
-    record_type_id = staticmethod(lambda: 7018)
+class _DataRecord7018(DataRecord, record_type_id=7018):
+    """Beamformed data"""
 
     _block_rth = DataBlock(
         (
@@ -355,10 +343,8 @@ class _DataRecord7018(DataRecord):
         )
 
 
-class _DataRecord7038(DataRecord):
-    """ IQ data """
-
-    record_type_id = staticmethod(lambda: 7038)
+class _DataRecord7038(DataRecord, record_type_id=7038):
+    """IQ data"""
 
     _block_rth = DataBlock(
         (
@@ -450,10 +436,8 @@ class _DataRecord7038(DataRecord):
         return records.RawIQ(**rth, iq=rd_value, frame=drf)
 
 
-class _DataRecord1003(DataRecord):
+class _DataRecord1003(DataRecord, record_type_id=1003):
     """Position - GPS Coordinates"""
-
-    record_type_id = staticmethod(lambda: 1003)
 
     _block_rth = DataBlock(
         (
@@ -478,10 +462,8 @@ class _DataRecord1003(DataRecord):
         return records.Position(**rth, frame=drf)
 
 
-class _DataRecord1012(DataRecord):
+class _DataRecord1012(DataRecord, record_type_id=1012):
     """Roll Pitch Heave"""
-
-    record_type_id = staticmethod(lambda: 1012)
 
     _block_rth = DataBlock(
         (
@@ -499,10 +481,8 @@ class _DataRecord1012(DataRecord):
         return records.RollPitchHeave(**rth, frame=drf)
 
 
-class _DataRecord1013(DataRecord):
+class _DataRecord1013(DataRecord, record_type_id=1013):
     """Heading"""
-
-    record_type_id = staticmethod(lambda: 1013)
 
     _block_rth = DataBlock((elemD_("heading", elemT.f32),))
 
@@ -516,10 +496,5 @@ class _DataRecord1013(DataRecord):
         return records.Heading(**rth, frame=drf)
 
 
-def record(type_id: int) -> DataRecord:
-    """Get a s7k record reader by record id """
-
-    rec = DataRecord.instance(type_id)
-    if rec is None:
-        raise ValueError(f"DataRecord with type-ID " f"{type_id} is not supported.")
-    return rec
+# for backwards compatibility
+record = DataRecord.get_class
