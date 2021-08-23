@@ -1,11 +1,9 @@
 """
 Tools for reading structured binary data
 """
-import abc
 import io
 import struct
 from collections import defaultdict, namedtuple
-from datetime import datetime, timedelta
 
 import numpy as np
 
@@ -33,23 +31,7 @@ def elemD_(name: str, fmt: str, count=1):
     return (name, (fmt, count))
 
 
-def parse_7k_timestamp(bs: bytes) -> datetime:
-    """Parse a timestamp from a bytes object"""
-    # We have raw days, datetime takes days and months. Easier to just add them
-    # as timedelta, and let datetime worry about leap-whatever
-    y, d, s, h, m = struct.unpack("<HHfBB", bs)
-    t = datetime(year=y, month=1, day=1)
-    t += timedelta(
-        # subtract 1 since datetime already starts at 1
-        days=d - 1,
-        hours=h,
-        minutes=m,
-        seconds=s,
-    )
-    return t
-
-
-class DataBlock(metaclass=abc.ABCMeta):
+class DataBlock:
     """
     Reads fixed-size blocks of structured binary data, according to a specified format
     """
@@ -151,82 +133,3 @@ class DataBlock(metaclass=abc.ABCMeta):
             del type_spec, fmt
             del idx, name, type_name, count
         return types  # apparently it should remain a list
-
-    @staticmethod
-    def _util_gen_elements(fields, names):
-        results = []
-        name_index = 0
-        for field in fields:
-            part_a, part_b, *_ = field
-            if part_a is None:
-                results.append(tuple([None, part_b]))
-            else:
-                results.append(tuple([names[name_index], part_a]))
-                name_index += 1
-        return results
-
-
-# List of fields in a Data Record Frame.
-# Using only primitive fields, for parsing.
-DRF_PRIMITIVE_FIELDS = (
-    "protocol_version",
-    "offset",
-    "sync_pattern",
-    "size",
-    "optional_data_offset",
-    "optional_data_id",
-    "time",
-    "record_version",
-    "record_type_id",
-    "device_id",
-    "system_enumerator",
-    "flags",
-)
-
-# Removes partial time fields, and adds a proper time field.
-DRF_REFINED_FIELDS = list(
-    filter(lambda name: not name.startswith("time_"), DRF_PRIMITIVE_FIELDS)
-) + ["time"]
-
-
-class DRFBlock(DataBlock):
-    """
-    Reads a Data Record Frame from binary data.
-    Specified in the Teledyne Reson Data Format Definition.
-    """
-
-    def __init__(self):
-        elements = tuple(
-            self._util_gen_elements(
-                (
-                    ((elemT.u16,), None),
-                    ((elemT.u16,), None),
-                    ((elemT.u32,), None),
-                    ((elemT.u32,), None),
-                    ((elemT.u32,), None),
-                    ((elemT.u32,), None),
-                    ((elemT.c8, 10), None),
-                    ((elemT.u16,), None),
-                    ((elemT.u32,), None),
-                    ((elemT.u32,), None),
-                    (None, (elemT.u16,)),
-                    ((elemT.u16,), None),
-                    (None, (elemT.u32,)),
-                    ((elemT.u16,), None),
-                    (None, (elemT.u16,)),
-                    (None, (elemT.u32,)),
-                    (None, (elemT.u32,)),
-                    (None, (elemT.u32,)),
-                ),
-                names=DRF_PRIMITIVE_FIELDS,
-            )
-        )
-        super().__init__(elements)
-
-    def read(self, source: io.RawIOBase):
-        from .records import DataRecordFrame
-
-        init_data = super().read(source)
-        # convert time from bytes to datetime
-        init_data["time"] = parse_7k_timestamp(b"".join(init_data["time"]))
-        return DataRecordFrame(**init_data)

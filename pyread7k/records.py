@@ -8,15 +8,16 @@ Fields are named as closely after DFD as possible, preferring verbose over ambig
 from __future__ import annotations
 
 import io
+import struct
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from xml.etree import ElementTree as ET
 
 import numpy as np
 
-from ._datablock import DataBlock, DRFBlock, elemD_, elemT, parse_7k_timestamp
+from ._datablock import DataBlock, elemD_, elemT
 
 
 def record(record_type_id: int):
@@ -25,6 +26,22 @@ def record(record_type_id: int):
         return BaseRecord._registry[record_type_id]
     except KeyError:
         raise ValueError(f"Records with type-ID={record_type_id} are not supported")
+
+
+def _parse_7k_timestamp(bs: bytes) -> datetime:
+    """Parse a timestamp from a bytes object"""
+    # We have raw days, datetime takes days and months. Easier to just add them
+    # as timedelta, and let datetime worry about leap-whatever
+    y, d, s, h, m = struct.unpack("<HHfBB", bs)
+    t = datetime(year=y, month=1, day=1)
+    t += timedelta(
+        # subtract 1 since datetime already starts at 1
+        days=d - 1,
+        hours=h,
+        minutes=m,
+        seconds=s,
+    )
+    return t
 
 
 def _bytes_to_str(dict, keys):
@@ -71,7 +88,28 @@ class BaseRecord(metaclass=ABCMeta):
 
     frame: DataRecordFrame
 
-    _block_drf = DRFBlock()
+    _block_drf = DataBlock(
+        (
+            elemD_("protocol_version", elemT.u16),
+            elemD_("offset", elemT.u16),
+            elemD_("sync_pattern", elemT.u32),
+            elemD_("size", elemT.u32),
+            elemD_("optional_data_offset", elemT.u32),
+            elemD_("optional_data_id", elemT.u32),
+            elemD_("time", elemT.c8, 10),
+            elemD_("record_version", elemT.u16),
+            elemD_("record_type_id", elemT.u32),
+            elemD_("device_id", elemT.u32),
+            elemD_(None, elemT.u16),
+            elemD_("system_enumerator", elemT.u16),
+            elemD_(None, elemT.u32),
+            elemD_("flags", elemT.u16),
+            elemD_(None, elemT.u16),
+            elemD_(None, elemT.u32),
+            elemD_(None, elemT.u32),
+            elemD_(None, elemT.u32),
+        )
+    )
     _block_checksum = DataBlock((("checksum", ("u32",)),))
     _registry = {}
 
@@ -83,7 +121,10 @@ class BaseRecord(metaclass=ABCMeta):
     def read(cls, source: io.RawIOBase) -> BaseRecord:
         """Read a record of record_type_id from source"""
         start_offset = source.tell()
-        drf = cls._block_drf.read(source)
+        drf_dict = cls._block_drf.read(source)
+        # convert time from bytes to datetime
+        drf_dict["time"] = _parse_7k_timestamp(b"".join(drf_dict["time"]))
+        drf = DataRecordFrame(**drf_dict)
         source.seek(start_offset)
         source.seek(4, io.SEEK_CUR)  # to sync pattern
         source.seek(drf.offset, io.SEEK_CUR)
@@ -661,7 +702,7 @@ class FileCatalog(BaseRecord, record_type_id=7300):
         rd = cls._block_rd_entry.read(source, rth["number_of_records"])
         times_bytes = rd["times"]
         rd["times"] = tuple(
-            parse_7k_timestamp(b"".join(times_bytes[i : i + 10]))
+            _parse_7k_timestamp(b"".join(times_bytes[i : i + 10]))
             for i in range(0, len(times_bytes), 10)
         )
         return cls(**rth, **rd, frame=drf)
