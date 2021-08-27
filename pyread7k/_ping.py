@@ -44,7 +44,11 @@ class PingType(Enum):
 
 
 class S7KReader(metaclass=ABCMeta):
-    """Base abstract class of S7K readers"""
+    """
+    Base abstract class of S7K readers
+
+    *Note*: The current S7KReader API is considered unstable and may change in the future.
+    """
 
     @cached_property
     def file_header(self) -> records.FileHeader:
