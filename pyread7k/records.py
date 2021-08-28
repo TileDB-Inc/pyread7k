@@ -12,7 +12,7 @@ import struct
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Sequence, Union
 from xml.etree import ElementTree as ET
 
 import numpy as np
@@ -44,15 +44,12 @@ def _parse_7k_timestamp(bs: bytes) -> datetime:
     return t
 
 
-def _bytes_to_str(dict, keys):
-    """
-    For each key, the corresponding dict value is transformed from
-    a list of bytes to a string
-    """
-    for key in keys:
-        byte_list = dict[key]
-        termination = byte_list.index(b"\x00")
-        dict[key] = b"".join(byte_list[:termination]).decode("UTF-8")
+def _bytes_to_str(b: Union[bytes, Sequence[bytes]], encoding: str = "UTF-8") -> str:
+    """Convert a null-terminated byte string (or sequence of bytes) to unicode string"""
+    non_null_bytes = b[: b.index(b"\x00")]
+    if not isinstance(non_null_bytes, bytes):
+        non_null_bytes = b"".join(non_null_bytes)
+    return non_null_bytes.decode(encoding)
 
 
 @dataclass
@@ -381,7 +378,7 @@ class Configuration(BaseRecord, record_type_id=7001):
         rd = []
         for _ in range(rth["number_of_devices"]):
             device_data = cls._block_rd_info.read(source)
-            _bytes_to_str(device_data, ["description"])
+            device_data["description"] = _bytes_to_str(device_data["description"])
             xml_string = source.read(device_data["info_length"])
             # Indexing removes a weird null-termination
             device_data["info"] = ET.fromstring(xml_string[:-1])
@@ -638,15 +635,13 @@ class FileHeader(BaseRecord, record_type_id=7200):
     @classmethod
     def _read(cls, source: io.RawIOBase, drf: DataRecordFrame, start_offset: int):
         rth = cls._block_rth.read(source)
-        _bytes_to_str(
-            rth,
-            [
-                "recording_name",
-                "recording_program_version_number",
-                "user_defined_name",
-                "notes",
-            ],
-        )
+        for key in (
+            "recording_name",
+            "recording_program_version_number",
+            "user_defined_name",
+            "notes",
+        ):
+            rth[key] = _bytes_to_str(rth[key])
         rd = cls._block_rd_device_type.read(source, rth["number_of_devices"])
         source.seek(start_offset)
         source.seek(drf.optional_data_offset, io.SEEK_CUR)
