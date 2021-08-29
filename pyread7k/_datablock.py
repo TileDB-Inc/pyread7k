@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from io import FileIO
 from struct import Struct
-from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -37,7 +37,7 @@ class DataBlock:
     Reads fixed-size blocks of structured binary data, according to a specified format
     """
 
-    def __init__(self, elements: Sequence[Element]):
+    def __init__(self, *elements: Element):
         self._elements = elements
         bom = "<"
         struct_fmt = bom

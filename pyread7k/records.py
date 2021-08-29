@@ -12,18 +12,25 @@ import struct
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any, BinaryIO, ClassVar, Dict, Optional, Sequence, Tuple, Type, Union
 from xml.etree import ElementTree as ET
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ._datablock import DataBlock, Element
-from ._datablock import ElementType as elemT
+from ._datablock import DataBlock, Element, ElementType
 
 
-def elemD_(name: Optional[str], type: elemT, count: int = 1) -> Element:
-    return Element(type, name, count)
+c8 = partial(Element, ElementType.c8)
+i8 = partial(Element, ElementType.i8)
+u8 = partial(Element, ElementType.u8)
+i16 = partial(Element, ElementType.i16)
+u16 = partial(Element, ElementType.u16)
+u32 = partial(Element, ElementType.u32)
+u64 = partial(Element, ElementType.u64)
+f32 = partial(Element, ElementType.f32)
+f64 = partial(Element, ElementType.f64)
 
 
 def record(record_type_id: int) -> Type[BaseRecord]:
@@ -92,28 +99,26 @@ class BaseRecord(metaclass=ABCMeta):
     frame: DataRecordFrame
 
     _block_drf = DataBlock(
-        (
-            elemD_("protocol_version", elemT.u16),
-            elemD_("offset", elemT.u16),
-            elemD_("sync_pattern", elemT.u32),
-            elemD_("size", elemT.u32),
-            elemD_("optional_data_offset", elemT.u32),
-            elemD_("optional_data_id", elemT.u32),
-            elemD_("time", elemT.c8, 10),
-            elemD_("record_version", elemT.u16),
-            elemD_("record_type_id", elemT.u32),
-            elemD_("device_id", elemT.u32),
-            elemD_(None, elemT.u16),
-            elemD_("system_enumerator", elemT.u16),
-            elemD_(None, elemT.u32),
-            elemD_("flags", elemT.u16),
-            elemD_(None, elemT.u16),
-            elemD_(None, elemT.u32),
-            elemD_(None, elemT.u32),
-            elemD_(None, elemT.u32),
-        )
+        u16("protocol_version"),
+        u16("offset"),
+        u32("sync_pattern"),
+        u32("size"),
+        u32("optional_data_offset"),
+        u32("optional_data_id"),
+        c8("time", 10),
+        u16("record_version"),
+        u32("record_type_id"),
+        u32("device_id"),
+        u16(),
+        u16("system_enumerator"),
+        u32(),
+        u16("flags"),
+        u16(),
+        u32(),
+        u32(),
+        u32(),
     )
-    _block_checksum = DataBlock((elemD_("checksum", elemT.u32),))
+    _block_checksum = DataBlock(u32("checksum"))
     _registry: ClassVar[Dict[int, Type[BaseRecord]]] = {}
 
     def __init_subclass__(cls, record_type_id: int):
@@ -167,18 +172,16 @@ class Position(BaseRecord, record_type_id=1003):
     number_of_satellites: int
 
     _block_rth = DataBlock(
-        (
-            elemD_("datum_id", elemT.u32),
-            elemD_("latency", elemT.f32),
-            elemD_("latitude_northing", elemT.f64),
-            elemD_("longitude_easting", elemT.f64),
-            elemD_("height", elemT.f64),
-            elemD_("position_type", elemT.u8),
-            elemD_("utm_zone", elemT.u8),
-            elemD_("quality_flag", elemT.u8),
-            elemD_("positioning_method", elemT.u8),
-            elemD_("number_of_satellites", elemT.u8),
-        )
+        u32("datum_id"),
+        f32("latency"),
+        f64("latitude_northing"),
+        f64("longitude_easting"),
+        f64("height"),
+        u8("position_type"),
+        u8("utm_zone"),
+        u8("quality_flag"),
+        u8("positioning_method"),
+        u8("number_of_satellites"),
     )
 
     @property
@@ -217,13 +220,7 @@ class RollPitchHeave(BaseRecord, record_type_id=1012):
     pitch: float
     heave: float
 
-    _block_rth = DataBlock(
-        (
-            elemD_("roll", elemT.f32),
-            elemD_("pitch", elemT.f32),
-            elemD_("heave", elemT.f32),
-        )
-    )
+    _block_rth = DataBlock(f32("roll"), f32("pitch"), f32("heave"))
 
     @classmethod
     def _read(
@@ -239,7 +236,7 @@ class Heading(BaseRecord, record_type_id=1013):
 
     heading: float
 
-    _block_rth = DataBlock((elemD_("heading", elemT.f32),))
+    _block_rth = DataBlock(f32("heading"))
 
     @classmethod
     def _read(
@@ -293,48 +290,46 @@ class SonarSettings(BaseRecord, record_type_id=7000):
     spreading: float
 
     _block_rth = DataBlock(
-        (
-            elemD_("sonar_id", elemT.u64),
-            elemD_("ping_number", elemT.u32),
-            elemD_("multi_ping_sequence", elemT.u16),
-            elemD_("frequency", elemT.f32),
-            elemD_("sample_rate", elemT.f32),
-            elemD_("receiver_bandwidth", elemT.f32),
-            elemD_("tx_pulse_width", elemT.f32),
-            elemD_("tx_pulse_type_id", elemT.u32),
-            elemD_("tx_pulse_envelope_id", elemT.u32),
-            elemD_("tx_pulse_envelope_parameter", elemT.f32),
-            elemD_("tx_pulse_mode", elemT.u16),
-            elemD_(None, elemT.u16),
-            elemD_("max_ping_rate", elemT.f32),
-            elemD_("ping_period", elemT.f32),
-            elemD_("range_selection", elemT.f32),
-            elemD_("power_selection", elemT.f32),
-            elemD_("gain_selection", elemT.f32),
-            elemD_("control_flags", elemT.u32),
-            elemD_("projector_id", elemT.u32),
-            elemD_("projector_beam_angle_vertical", elemT.f32),
-            elemD_("projector_beam_angle_horizontal", elemT.f32),
-            elemD_("projector_beam_width_vertical", elemT.f32),
-            elemD_("projector_beam_width_horizontal", elemT.f32),
-            elemD_("projector_beam_focal_point", elemT.f32),
-            elemD_("projector_beam_weighting_window_type", elemT.u32),
-            elemD_("projector_beam_weighting_window_parameter", elemT.f32),
-            elemD_("transmit_flags", elemT.u32),
-            elemD_("hydrophone_id", elemT.u32),
-            elemD_("receive_beam_weighting_window", elemT.u32),
-            elemD_("receive_beam_weighting_parameter", elemT.f32),
-            elemD_("receive_flags", elemT.u32),
-            elemD_("receive_beam_width", elemT.f32),
-            elemD_("bottom_detection_filter_min_range", elemT.f32),
-            elemD_("bottom_detection_filter_max_range", elemT.f32),
-            elemD_("bottom_detection_filter_min_depth", elemT.f32),
-            elemD_("bottom_detection_filter_max_depth", elemT.f32),
-            elemD_("absorption", elemT.f32),
-            elemD_("sound_velocity", elemT.f32),
-            elemD_("spreading", elemT.f32),
-            elemD_(None, elemT.u16),
-        )
+        u64("sonar_id"),
+        u32("ping_number"),
+        u16("multi_ping_sequence"),
+        f32("frequency"),
+        f32("sample_rate"),
+        f32("receiver_bandwidth"),
+        f32("tx_pulse_width"),
+        u32("tx_pulse_type_id"),
+        u32("tx_pulse_envelope_id"),
+        f32("tx_pulse_envelope_parameter"),
+        u16("tx_pulse_mode"),
+        u16(),
+        f32("max_ping_rate"),
+        f32("ping_period"),
+        f32("range_selection"),
+        f32("power_selection"),
+        f32("gain_selection"),
+        u32("control_flags"),
+        u32("projector_id"),
+        f32("projector_beam_angle_vertical"),
+        f32("projector_beam_angle_horizontal"),
+        f32("projector_beam_width_vertical"),
+        f32("projector_beam_width_horizontal"),
+        f32("projector_beam_focal_point"),
+        u32("projector_beam_weighting_window_type"),
+        f32("projector_beam_weighting_window_parameter"),
+        u32("transmit_flags"),
+        u32("hydrophone_id"),
+        u32("receive_beam_weighting_window"),
+        f32("receive_beam_weighting_parameter"),
+        u32("receive_flags"),
+        f32("receive_beam_width"),
+        f32("bottom_detection_filter_min_range"),
+        f32("bottom_detection_filter_max_range"),
+        f32("bottom_detection_filter_min_depth"),
+        f32("bottom_detection_filter_max_depth"),
+        f32("absorption"),
+        f32("sound_velocity"),
+        f32("spreading"),
+        u16(),
     )
 
     @classmethod
@@ -365,20 +360,13 @@ class Configuration(BaseRecord, record_type_id=7001):
     number_of_devices: int
     devices: Sequence[DeviceConfiguration]
 
-    _block_rth = DataBlock(
-        (
-            elemD_("sonar_serial_number", elemT.u64),
-            elemD_("number_of_devices", elemT.u32),
-        )
-    )
+    _block_rth = DataBlock(u64("sonar_serial_number"), u32("number_of_devices"))
     _block_rd_info = DataBlock(
-        (
-            elemD_("identifier", elemT.u32),
-            elemD_("description", elemT.c8, 60),  # We should parse this better
-            elemD_("alphadata_card", elemT.u32),
-            elemD_("serial_number", elemT.u64),
-            elemD_("info_length", elemT.u32),
-        )
+        u32("identifier"),
+        c8("description", 60),  # We should parse this better
+        u32("alphadata_card"),
+        u64("serial_number"),
+        u32("info_length"),
     )
 
     @classmethod
@@ -409,9 +397,7 @@ class BeamGeometry(BaseRecord, record_type_id=7004):
     beam_width_xs: NDArray[np.float32]
     tx_delays: Optional[NDArray[np.float32]] = None
 
-    _block_rth = DataBlock(
-        (elemD_("sonar_id", elemT.u64), elemD_("number_of_beams", elemT.u32))
-    )
+    _block_rth = DataBlock(u64("sonar_id"), u32("number_of_beams"))
 
     @classmethod
     def _read(
@@ -426,16 +412,16 @@ class BeamGeometry(BaseRecord, record_type_id=7004):
             - cls._block_rth.size
         )
         block_rd_elements = (
-            elemD_("vertical_angles", elemT.f32, n_beams),
-            elemD_("horizontal_angles", elemT.f32, n_beams),
-            elemD_("beam_width_ys", elemT.f32, n_beams),
-            elemD_("beam_width_xs", elemT.f32, n_beams),
-            elemD_("tx_delays", elemT.f32, n_beams),
+            f32("vertical_angles", n_beams),
+            f32("horizontal_angles", n_beams),
+            f32("beam_width_ys", n_beams),
+            f32("beam_width_xs", n_beams),
+            f32("tx_delays", n_beams),
         )
-        block_rd = DataBlock(block_rd_elements)
+        block_rd = DataBlock(*block_rd_elements)
         if block_rd.size != block_rd_size:
             # tx_delays missing
-            block_rd = DataBlock(block_rd_elements[:-1])
+            block_rd = DataBlock(*block_rd_elements[:-1])
             assert block_rd.size == block_rd_size, (block_rd.size, block_rd_size)
 
         array_rd = block_rd.read_dense(source)
@@ -455,15 +441,13 @@ class TVG(BaseRecord, record_type_id=7010):
     gains: NDArray[np.float32]
 
     _block_rth = DataBlock(
-        (
-            elemD_("sonar_id", elemT.u64),
-            elemD_("ping_number", elemT.u32),
-            elemD_("multi_ping_sequence", elemT.u16),
-            elemD_("number_of_samples", elemT.u32),
-            elemD_(None, elemT.u32, 8),
-        )
+        u64("sonar_id"),
+        u32("ping_number"),
+        u16("multi_ping_sequence"),
+        u32("number_of_samples"),
+        u32(count=8),
     )
-    _block_gain_sample = DataBlock((elemD_("gains", elemT.f32),))
+    _block_gain_sample = DataBlock(f32("gains"))
 
     @classmethod
     def _read(cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int) -> TVG:
@@ -486,16 +470,14 @@ class Beamformed(BaseRecord, record_type_id=7018):
     phases: NDArray[np.int16]
 
     _block_rth = DataBlock(
-        (
-            elemD_("sonar_id", elemT.u64),
-            elemD_("ping_number", elemT.u32),
-            elemD_("is_multi_ping", elemT.u16),
-            elemD_("number_of_beams", elemT.u16),
-            elemD_("number_of_samples", elemT.u32),
-            elemD_(None, elemT.u32, 8),
-        )
+        u64("sonar_id"),
+        u32("ping_number"),
+        u16("is_multi_ping"),
+        u16("number_of_beams"),
+        u32("number_of_samples"),
+        u32(count=8),
     )
-    _block_rd_amp_phs = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
+    _block_rd_amp_phs = DataBlock(u16("amp"), i16("phs"))
 
     @classmethod
     def _read(
@@ -526,41 +508,32 @@ class RawIQ(BaseRecord, record_type_id=7038):
     iq: NDArray[Any]  # [('i', np.integer), ('q', np.integer)]]
 
     _block_rth = DataBlock(
-        (
-            elemD_("serial_number", elemT.u64),  # Sonar serial number
-            elemD_("ping_number", elemT.u32),  # Sequential number
-            elemD_(None, elemT.u16),  # Reserved (zeroed) but see note 1 below
-            elemD_("channel_count", elemT.u16),  # Num system Rx elements
-            elemD_("n_samples", elemT.u32),  # Num samples within ping
-            elemD_("n_actual_channels", elemT.u16),  # Num elems in record
-            elemD_("start_sample", elemT.u32),  # First sample in record
-            elemD_("stop_sample", elemT.u32),  # Last sample in record
-            elemD_("sample_type", elemT.u16),  # Sample type ID
-            elemD_(None, elemT.u32, 7),
-        )
+        u64("serial_number"),  # Sonar serial number
+        u32("ping_number"),  # Sequential number
+        u16(),  # Reserved (zeroed) but see note 1 below
+        u16("channel_count"),  # Num system Rx elements
+        u32("n_samples"),  # Num samples within ping
+        u16("n_actual_channels"),  # Num elems in record
+        u32("start_sample"),  # First sample in record
+        u32("stop_sample"),  # Last sample in record
+        u16("sample_type"),  # Sample type ID
+        u32(count=7),
     )  # Reserved (zeroed)
     # Note 1: Original DFD20724.docx document defines this element as
     # 'Reserved u16'. The MATLAB reader parses this as "multipingSequence".
     # This implementation follows the document and sets as reserved.
-    _block_rd_data_u16 = DataBlock((elemD_("amp", elemT.u16), elemD_("phs", elemT.i16)))
+    _block_rd_data_u16 = DataBlock(u16("amp"), i16("phs"))
 
     @classmethod
     def _read(cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int) -> RawIQ:
         rth = cls._block_rth.read(source)
         n_actual_channels = rth["n_actual_channels"]
-        block_channel_array = DataBlock(
-            (elemD_("channel_array", elemT.u16, n_actual_channels),)
-        )
+        block_channel_array = DataBlock(u16("channel_array", n_actual_channels))
         channel_array = block_channel_array.read_dense(source)
         channel_array = np.squeeze(channel_array["channel_array"])
         rth["channel_array"] = channel_array
         n_actual_samples = rth["stop_sample"] - rth["start_sample"] + 1
         sample_type = rth["sample_type"]
-
-        def f_block_actual_data(
-            elem_type: str, count: int = n_actual_channels * n_actual_samples * 2
-        ) -> DataBlock:
-            return DataBlock((elemD_("actual_data", elem_type, count),))
 
         # From document DFD20724.docx:
         # System data is always 16 bits I & Q. Sample type is used only for
@@ -573,15 +546,18 @@ class RawIQ(BaseRecord, record_type_id=7038):
         #         eight bits of 16-bit data are used.
         #     0 – Indicates that the data is not valid.
 
+        count = n_actual_channels * n_actual_samples * 2
         if sample_type == 8:
             # from MATLAB reader:
-            actual_data = f_block_actual_data(elemT.i8).read_dense(source)
+            datablock = DataBlock(i8("actual_data", count))
+            actual_data = datablock.read_dense(source)
             actual_data = np.squeeze(actual_data["actual_data"])
             actual_data[actual_data < 0] += 65536
             actual_data *= 16
             actual_data[actual_data > 2047] -= 4096
         elif sample_type == 16:
-            actual_data = f_block_actual_data(elemT.i16).read_dense(source)
+            datablock = DataBlock(i16("actual_data", count))
+            actual_data = datablock.read_dense(source)
             actual_data = np.squeeze(actual_data["actual_data"])
         else:
             # Data is either invalid (0) or 12 bit (not supported):
@@ -620,25 +596,19 @@ class FileHeader(BaseRecord, record_type_id=7200):
     catalog_offset: int
 
     _block_rth = DataBlock(
-        (
-            elemD_("file_id", elemT.u64, 2),
-            elemD_("version_number", elemT.u16),
-            elemD_(None, elemT.u16),
-            elemD_("session_id", elemT.u64, 2),
-            elemD_("record_data_size", elemT.u32),
-            elemD_("number_of_devices", elemT.u32),
-            elemD_("recording_name", elemT.c8, 64),
-            elemD_("recording_program_version_number", elemT.c8, 16),
-            elemD_("user_defined_name", elemT.c8, 64),
-            elemD_("notes", elemT.c8, 128),
-        )
+        u64("file_id", 2),
+        u16("version_number"),
+        u16(),
+        u64("session_id", 2),
+        u32("record_data_size"),
+        u32("number_of_devices"),
+        c8("recording_name", 64),
+        c8("recording_program_version_number", 16),
+        c8("user_defined_name", 64),
+        c8("notes", 128),
     )
-    _block_rd_device_type = DataBlock(
-        (elemD_("device_ids", elemT.u32), elemD_("system_enumerators", elemT.u16))
-    )
-    _block_od = DataBlock(
-        (elemD_("catalog_size", elemT.u32), elemD_("catalog_offset", elemT.u64))
-    )
+    _block_rd_device_type = DataBlock(u32("device_ids"), u16("system_enumerators"))
+    _block_od = DataBlock(u32("catalog_size"), u64("catalog_offset"))
 
     @classmethod
     def _read(
@@ -680,25 +650,16 @@ class FileCatalog(BaseRecord, record_type_id=7300):
     times: Sequence[datetime]
     record_counts: Sequence[int]
 
-    _block_rth = DataBlock(
-        (
-            elemD_("size", elemT.u32),
-            elemD_("version", elemT.u16),
-            elemD_("number_of_records", elemT.u32),
-            elemD_(None, elemT.u32),
-        )
-    )
+    _block_rth = DataBlock(u32("size"), u16("version"), u32("number_of_records"), u32())
     _block_rd_entry = DataBlock(
-        (
-            elemD_("sizes", elemT.u32),
-            elemD_("offsets", elemT.u64),
-            elemD_("record_types", elemT.u16),
-            elemD_("device_ids", elemT.u16),
-            elemD_("system_enumerators", elemT.u16),
-            elemD_("times", elemT.c8, 10),
-            elemD_("record_counts", elemT.u32),
-            elemD_(None, elemT.u16, 8),
-        )
+        u32("sizes"),
+        u64("offsets"),
+        u16("record_types"),
+        u16("device_ids"),
+        u16("system_enumerators"),
+        c8("times", 10),
+        u32("record_counts"),
+        u16(count=8),
     )
 
     @classmethod
