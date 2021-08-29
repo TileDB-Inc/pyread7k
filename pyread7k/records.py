@@ -435,7 +435,7 @@ class BeamGeometry(BaseRecord, record_type_id=7004):
 
         array_rd = block_rd.read_dense(source)
         # Convert to dictionary
-        rd = {k[0]: array_rd[k[0]].squeeze() for k in block_rd.numpy_types}
+        rd = {name: array_rd[name].squeeze() for name in block_rd.names}
         return cls(**rth, **rd, frame=drf)
 
 
