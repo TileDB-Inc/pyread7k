@@ -64,17 +64,26 @@ class DataBlock:
     def size(self) -> int:
         return self._struct.size
 
-    def read(self, source: BinaryIO, count: int = 1) -> Dict[str, Any]:
-        dict_read: Dict[str, Any] = defaultdict(list)
+    def read(self, source: BinaryIO) -> Dict[str, Any]:
+        unpacked_dict: Dict[str, Any] = {}
+        unpacked = self._struct.unpack(source.read(self.size))
+        stop = 0
+        for element in self._elements:
+            start = stop
+            stop += element.count
+            if element.name is not None:
+                if element.count == 1:
+                    unpacked_dict[element.name] = unpacked[start]
+                else:
+                    unpacked_dict[element.name] = unpacked[start:stop]
+        return unpacked_dict
+
+    def read_multiple(self, source: BinaryIO, count: int) -> Dict[str, List[Any]]:
+        unpacked_dict: Dict[str, List[Any]] = defaultdict(list)
         for _ in range(count):
-            unpacked = self._struct.unpack(source.read(self.size))
-            stop = 0
-            for element in self._elements:
-                start = stop
-                stop += element.count
-                if element.name is not None:
-                    dict_read[element.name].extend(unpacked[start:stop])
-        return {k: (v[0] if len(v) == 1 else v) for k, v in dict_read.items()}
+            for k, v in self.read(source).items():
+                unpacked_dict[k].append(v)
+        return unpacked_dict
 
     def read_dense(self, source: BinaryIO, count: int = 1) -> np.ndarray:
         if isinstance(source, FileIO):

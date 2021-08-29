@@ -41,8 +41,10 @@ def record(record_type_id: int) -> Type[BaseRecord]:
         raise ValueError(f"Records with type-ID={record_type_id} are not supported")
 
 
-def _parse_7k_timestamp(bs: bytes) -> datetime:
+def _parse_7k_timestamp(bs: Union[bytes, Sequence[bytes]]) -> datetime:
     """Parse a timestamp from a bytes object"""
+    if not isinstance(bs, bytes):
+        bs = b"".join(bs)
     # We have raw days, datetime takes days and months. Easier to just add them
     # as timedelta, and let datetime worry about leap-whatever
     y, d, s, h, m = struct.unpack("<HHfBB", bs)
@@ -131,7 +133,7 @@ class BaseRecord(metaclass=ABCMeta):
         start_offset = source.tell()
         drf_dict = cls._block_drf.read(source)
         # convert time from bytes to datetime
-        drf_dict["time"] = _parse_7k_timestamp(b"".join(drf_dict["time"]))
+        drf_dict["time"] = _parse_7k_timestamp(drf_dict["time"])
         drf = DataRecordFrame(**drf_dict)
         source.seek(start_offset)
         source.seek(4, io.SEEK_CUR)  # to sync pattern
@@ -622,11 +624,17 @@ class FileHeader(BaseRecord, record_type_id=7200):
             "notes",
         ):
             rth[key] = _bytes_to_str(rth[key])
-        rd = cls._block_rd_device_type.read(source, rth["number_of_devices"])
+        rd = cls._block_rd_device_type.read_multiple(source, rth["number_of_devices"])
         source.seek(start_offset)
         source.seek(drf.optional_data_offset, io.SEEK_CUR)
         od = cls._block_od.read(source)
-        return cls(**rth, **rd, **od, frame=drf)
+        return cls(
+            drf,
+            **rth,
+            device_ids=rd["device_ids"],
+            system_enumerators=rd["system_enumerators"],
+            **od,
+        )
 
 
 @dataclass
@@ -667,10 +675,7 @@ class FileCatalog(BaseRecord, record_type_id=7300):
         cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int
     ) -> FileCatalog:
         rth = cls._block_rth.read(source)
-        rd = cls._block_rd_entry.read(source, rth["number_of_records"])
-        times_bytes = rd["times"]
-        rd["times"] = tuple(
-            _parse_7k_timestamp(b"".join(times_bytes[i : i + 10]))
-            for i in range(0, len(times_bytes), 10)
-        )
-        return cls(**rth, **rd, frame=drf)
+        rd = cls._block_rd_entry.read_multiple(source, rth["number_of_records"])
+        # convert time from bytes to datetime
+        rd["times"] = list(map(_parse_7k_timestamp, rd["times"]))
+        return cls(drf, rth["size"], rth["version"], rth["number_of_records"], **rd)
