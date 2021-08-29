@@ -1,37 +1,35 @@
 """
 Tools for reading structured binary data
 """
-from collections import defaultdict, namedtuple
+from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
 from io import FileIO
 from struct import Struct
 from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-_ElementTypes = namedtuple(
-    "_ElementTypes",
-    [
-        # These are the canonical names of low-level element types:
-        "c8",
-        "i8",
-        "u8",  # 3 int types of 1 byte
-        "i16",
-        "u16",  # 2 int types of 2 bytes
-        "i32",
-        "u32",  # 2 int types of 4 bytes
-        "i64",
-        "u64",  # 2 int types of 8 bytes
-        "f32",  # 1 float type of 4 bytes
-        "f64",  # 1 float type of 4 bytes
-    ],
-)
-elemT = _ElementTypes(**dict(zip(_ElementTypes._fields, _ElementTypes._fields)))
 
-_elemD_Type = Tuple[Optional[str], Tuple[str, int]]
+class ElementType(Enum):
+    c8 = "c"
+    i8 = "b"
+    u8 = "B"
+    i16 = "h"
+    u16 = "H"
+    i32 = "i"
+    u32 = "I"
+    i64 = "q"
+    u64 = "Q"
+    f32 = "f"
+    f64 = "d"
 
 
-def elemD_(name: Optional[str], fmt: str, count: int = 1) -> _elemD_Type:
-    return (name, (fmt, count))
+@dataclass
+class Element:
+    type: ElementType
+    name: Optional[str] = None
+    count: int = 1
 
 
 class DataBlock:
@@ -39,42 +37,27 @@ class DataBlock:
     Reads fixed-size blocks of structured binary data, according to a specified format
     """
 
-    _byte_order_fmt = "<"
-    _fmt_mapping = {
-        elemT.c8: "c",
-        elemT.i8: "b",
-        elemT.u8: "B",
-        elemT.i16: "h",
-        elemT.u16: "H",
-        elemT.i32: "i",
-        elemT.u32: "I",
-        elemT.i64: "q",
-        elemT.u64: "Q",
-        elemT.f32: "f",
-        elemT.f64: "d",
-    }
-
-    def __init__(self, elements: Sequence[_elemD_Type]):
-        self._names, self._sizes = zip(*elements)
-        bom = self._byte_order_fmt
+    def __init__(self, elements: Sequence[Element]):
+        self._elements = elements
+        bom = "<"
         struct_fmt = bom
         np_tuples: List[Union[Tuple[str, str], Tuple[str, str, int]]] = []
-        for field_name, (type_name, count) in zip(self.names, self._sizes):
-            fmt = self._fmt_mapping[type_name]
-            if count == 1:
+        for element, name in zip(elements, self.names):
+            fmt = element.type.value
+            if element.count == 1:
                 struct_fmt += fmt
-                np_tuples.append((field_name, bom + fmt))
+                np_tuples.append((name, bom + fmt))
             else:
-                struct_fmt += str(count) + fmt
-                np_tuples.append((field_name, bom + fmt, count))
+                struct_fmt += str(element.count) + fmt
+                np_tuples.append((name, bom + fmt, element.count))
         self._struct = Struct(struct_fmt)
         self._dtype = np.dtype(np_tuples)
 
     @property
     def names(self) -> Iterable[str]:
         return (
-            f"__reserved{i}__" if name is None else name
-            for i, name in enumerate(self._names)
+            f"__reserved{i}__" if element.name is None else element.name
+            for i, element in enumerate(self._elements)
         )
 
     @property
@@ -86,11 +69,11 @@ class DataBlock:
         for _ in range(count):
             unpacked = self._struct.unpack(source.read(self.size))
             stop = 0
-            for name, (_, count) in zip(self._names, self._sizes):
+            for element in self._elements:
                 start = stop
-                stop += count
-                if isinstance(name, str):
-                    dict_read[name].extend(unpacked[start:stop])
+                stop += element.count
+                if element.name is not None:
+                    dict_read[element.name].extend(unpacked[start:stop])
         return {k: (v[0] if len(v) == 1 else v) for k, v in dict_read.items()}
 
     def read_dense(self, source: BinaryIO, count: int = 1) -> np.ndarray:

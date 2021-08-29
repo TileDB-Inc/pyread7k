@@ -18,7 +18,12 @@ from xml.etree import ElementTree as ET
 import numpy as np
 from numpy.typing import NDArray
 
-from ._datablock import DataBlock, elemD_, elemT
+from ._datablock import DataBlock, Element
+from ._datablock import ElementType as elemT
+
+
+def elemD_(name: Optional[str], type: elemT, count: int = 1) -> Element:
+    return Element(type, name, count)
 
 
 def record(record_type_id: int) -> Type[BaseRecord]:
