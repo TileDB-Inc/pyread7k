@@ -210,8 +210,7 @@ class Position(BaseRecord, record_type_id=1003):
     def _read(
         cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int
     ) -> Position:
-        rth = cls._block_rth.read(source)
-        return cls(**rth, frame=drf)
+        return cls(drf, **cls._block_rth.read(source))
 
 
 @dataclass
@@ -228,8 +227,7 @@ class RollPitchHeave(BaseRecord, record_type_id=1012):
     def _read(
         cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int
     ) -> RollPitchHeave:
-        rth = cls._block_rth.read(source)
-        return cls(**rth, frame=drf)
+        return cls(drf, **cls._block_rth.read(source))
 
 
 @dataclass
@@ -244,8 +242,7 @@ class Heading(BaseRecord, record_type_id=1013):
     def _read(
         cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int
     ) -> Heading:
-        rth = cls._block_rth.read(source)
-        return cls(**rth, frame=drf)
+        return cls(drf, **cls._block_rth.read(source))
 
 
 @dataclass
@@ -338,8 +335,7 @@ class SonarSettings(BaseRecord, record_type_id=7000):
     def _read(
         cls, source: BinaryIO, drf: DataRecordFrame, start_offset: int
     ) -> SonarSettings:
-        rth = cls._block_rth.read(source)
-        return cls(**rth, frame=drf)
+        return cls(drf, **cls._block_rth.read(source))
 
 
 @dataclass
@@ -384,7 +380,7 @@ class Configuration(BaseRecord, record_type_id=7001):
             # Indexing removes a weird null-termination
             device_data["info"] = ET.fromstring(xml_string[:-1])
             devices.append(DeviceConfiguration(**device_data))
-        return cls(**rth, devices=devices, frame=drf)
+        return cls(drf, **rth, devices=devices)
 
 
 @dataclass
@@ -429,7 +425,7 @@ class BeamGeometry(BaseRecord, record_type_id=7004):
         array_rd = block_rd.read_dense(source)
         # Convert to dictionary
         rd = {name: array_rd[name].squeeze() for name in block_rd.names}
-        return cls(**rth, **rd, frame=drf)
+        return cls(drf, **rth, **rd)
 
 
 @dataclass
@@ -456,7 +452,7 @@ class TVG(BaseRecord, record_type_id=7010):
         rth = cls._block_rth.read(source)
         sample_count = rth["number_of_samples"]
         rd = cls._block_gain_sample.read_dense(source, sample_count)
-        return cls(**rth, gains=rd["gains"], frame=drf)
+        return cls(drf, **rth, gains=rd["gains"])
 
 
 @dataclass
@@ -491,7 +487,7 @@ class Beamformed(BaseRecord, record_type_id=7018):
         count = n_samples * n_beams
         rd = cls._block_rd_amp_phs.read_dense(source, count)
         rd = rd.reshape((n_samples, n_beams))
-        return cls(**rth, amplitudes=rd["amp"], phases=rd["phs"], frame=drf)
+        return cls(drf, **rth, amplitudes=rd["amp"], phases=rd["phs"])
 
 
 @dataclass
@@ -576,7 +572,7 @@ class RawIQ(BaseRecord, record_type_id=7038):
         rd_view["q"][:, channel_array] = actual_data[1::2].reshape(
             (-1, n_actual_channels)
         )
-        return cls(**rth, iq=rd_value, frame=drf)
+        return cls(drf, **rth, iq=rd_value)
 
 
 @dataclass
