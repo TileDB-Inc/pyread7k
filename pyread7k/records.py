@@ -88,18 +88,6 @@ class DataRecordFrame:
     flags: int
     checksum: Optional[int] = None
 
-    def __str__(self) -> str:
-        return f"DataRecordFrame(record_type_id={self.record_type_id}, time={str(self.time)}"
-
-
-@dataclass
-class BaseRecord(metaclass=ABCMeta):
-    """
-    The base from which all records inherit.
-    """
-
-    frame: DataRecordFrame
-
     _block_drf = DataBlock(
         u16("protocol_version"),
         u16("offset"),
@@ -121,29 +109,53 @@ class BaseRecord(metaclass=ABCMeta):
         u32(),
     )
     _block_checksum = DataBlock(u32("checksum"))
+
+    def __str__(self) -> str:
+        return f"DataRecordFrame(record_type_id={self.record_type_id}, time={str(self.time)}"
+
+    @property
+    def embedded_data_size(self) -> int:
+        """Size of the embedded data section in this record frame"""
+        return self.size - self._block_drf.size - self._block_checksum.size
+
+    @classmethod
+    def read(cls, source: BinaryIO) -> DataRecordFrame:
+        start_offset = source.tell()
+        drf = cls._block_drf.read(source)
+        # convert time from bytes to datetime
+        drf["time"] = _parse_7k_timestamp(drf["time"])
+        # read checksum at the end
+        source.seek(start_offset + drf["size"] - cls._block_checksum.size)
+        checksum = cls._block_checksum.read(source)["checksum"]
+        if drf["flags"] & 0b1 > 0:  # Check if checksum is valid
+            drf["checksum"] = checksum
+        return cls(**drf)
+
+
+@dataclass
+class BaseRecord(metaclass=ABCMeta):
+    """
+    The base from which all records inherit.
+    """
+
+    frame: DataRecordFrame
+
     _registry: ClassVar[Dict[int, Type[BaseRecord]]] = {}
 
     def __init_subclass__(cls, record_type_id: int):
-        super().__init_subclass__()
         cls._registry[record_type_id] = cls
 
     @classmethod
     def read(cls, source: BinaryIO) -> BaseRecord:
-        """Read a record of record_type_id from source"""
         start_offset = source.tell()
-        drf_dict = cls._block_drf.read(source)
-        # convert time from bytes to datetime
-        drf_dict["time"] = _parse_7k_timestamp(drf_dict["time"])
-        drf = DataRecordFrame(**drf_dict)
-        source.seek(start_offset)
-        source.seek(4, io.SEEK_CUR)  # to sync pattern
-        source.seek(drf.offset, io.SEEK_CUR)
-        rec = cls._read(source, drf, start_offset)
-        checksum = cls._block_checksum.read(source)["checksum"]
-        if drf.flags & 0b1 > 0:  # Check if checksum is valid
-            drf.checksum = checksum
-        source.seek(start_offset)  # reset source to start
-        return rec
+        try:
+            drf = DataRecordFrame.read(source)
+            source.seek(start_offset)
+            source.seek(4, io.SEEK_CUR)  # to sync pattern
+            source.seek(drf.offset, io.SEEK_CUR)
+            return cls._read(source, drf, start_offset)
+        finally:
+            source.seek(start_offset)  # reset source to start
 
     @classmethod
     @abstractmethod
@@ -403,12 +415,7 @@ class BeamGeometry(BaseRecord, record_type_id=7004):
     ) -> BeamGeometry:
         rth = cls._block_rth.read(source)
         n_beams = rth["number_of_beams"]
-        block_rd_size = (
-            drf.size
-            - cls._block_drf.size
-            - cls._block_checksum.size
-            - cls._block_rth.size
-        )
+        block_rd_size = drf.embedded_data_size - cls._block_rth.size
         block_rd_elements = (
             f32("vertical_angles", n_beams),
             f32("horizontal_angles", n_beams),
