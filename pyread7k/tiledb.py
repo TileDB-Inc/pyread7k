@@ -1,16 +1,26 @@
 """
 Store 7K records as a TileDB array
 """
+import sys
 from datetime import datetime
 from io import BytesIO
 from itertools import chain, islice
-from typing import Any, BinaryIO, Iterable, Iterator, List, Mapping, Tuple, TypeVar
+from typing import (
+    Any,
+    BinaryIO,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 
 import numpy as np
 import tiledb
 
 import pyread7k
-
 
 T = TypeVar("T")
 
@@ -116,6 +126,20 @@ class S7KTileDBReader(pyread7k.S7KReader):
     def __init__(self, arr: tiledb.Array):
         self._arr = arr
 
+    def read_record_bytes(self, record_type: int) -> Optional[bytes]:
+        offset = self.get_first_offset(record_type, 0, sys.maxsize)
+        return self._get_stream_for_read(offset).read() if offset is not None else None
+
+    def iter_timedelta_record_bytes(
+        self, *record_types: int
+    ) -> Iterator[Tuple[Optional[float], bytes]]:
+        query = self._arr.query(dims=("time",), return_incomplete=True)
+        for rdict in query.multi_index[:, list(record_types)]:
+            time_deltas = (rdict["time"][1:] - rdict["time"][:-1]).tolist()
+            for td, record_bytes in zip(time_deltas, rdict["bytes"][:-1]):
+                yield td.total_seconds(), record_bytes
+            yield None, rdict["bytes"][-1]
+
     def read_records_during_ping(
         self,
         record_type: int,
@@ -150,7 +174,6 @@ class S7KTileDBReader(pyread7k.S7KReader):
 
 if __name__ == "__main__":
     import shutil
-    import sys
 
     inpath, outpath = sys.argv[1:]
     shutil.rmtree(outpath, ignore_errors=True)
