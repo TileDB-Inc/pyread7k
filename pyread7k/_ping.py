@@ -246,10 +246,10 @@ class Ping:
         reader: S7KReader,
     ):
         self._reader = reader
-        self._offset, sonar_settings = offset_record
-        self._ping_number = sonar_settings.ping_number
-        self._sample_rate = sonar_settings.sample_rate
-        self._ping_start = sonar_settings.frame.time
+        self._offset, self.sonar_settings = offset_record
+        self._ping_number = self.sonar_settings.ping_number
+        self._sample_rate = self.sonar_settings.sample_rate
+        self._ping_start = self.sonar_settings.frame.time
         if next_offset_record is not None:
             self._next_offset, next_sonar_settings = next_offset_record
             self._next_ping_start = next_sonar_settings.frame.time
